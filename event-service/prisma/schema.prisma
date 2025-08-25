@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EventType {
+  WORKSHOP
+  SEMINAR
+  HACKATHON
+  MEETUP
+}
+
+enum EventMode {
+  ONLINE
+  ONSITE
+  HYBRID
+}
+
+enum ModerationStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model Event {
+  id                String            @id @default(cuid())
+  collegeId         String
+  authorId          String
+  authorName        String
+  authorRole        String
+  title             String
+  description       String
+  startAt           DateTime
+  endAt             DateTime
+  type              EventType
+  mode              EventMode
+  location          String?
+  meetingUrl        String?
+  capacity          Int?
+  visibleToAllDepts Boolean           @default(false)
+  departments       String[]          @default([])
+  tags              String[]          @default([])
+  moderationStatus  ModerationStatus  @default(PENDING_REVIEW)
+  monitorId         String?
+  monitorName       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  archivedAt        DateTime?
+
+  registrations     EventRegistration[]
+
+  @@index([collegeId])
+  @@index([type])
+  @@index([startAt])
+  @@index([moderationStatus])
+  @@index([createdAt])
+}
+
+model EventRegistration {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  joinedAt  DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}

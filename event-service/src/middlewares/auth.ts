@@ -1,0 +1,28 @@
+import { verifyAccessToken, AccessTokenPayload } from "../utils/jwt";
+
+export async function requireAuth(req: any): Promise<AccessTokenPayload> {
+  const auth = req.headers["authorization"] as string | undefined;
+  if (!auth?.startsWith("Bearer ")) {
+    const err: any = new Error("Unauthorized");
+    err.statusCode = 401;
+    throw err;
+  }
+  const token = auth.slice("Bearer ".length);
+  try {
+    return await verifyAccessToken(token);
+  } catch (e: any) {
+    const err: any = new Error(e?.code === "ERR_JWT_EXPIRED" ? "Token expired" : "Unauthorized");
+    err.statusCode = 401;
+    if (e?.code) (err as any).code = e.code;
+    throw err;
+  }
+}
+
+export function requireRole(payload: { roles?: string[] }, allowed: string[]) {
+  const has = (payload.roles || []).some((r) => allowed.includes(r));
+  if (!has) {
+    const err: any = new Error("Forbidden");
+    err.statusCode = 403;
+    throw err;
+  }
+}

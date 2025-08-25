@@ -1,0 +1,75 @@
+###############################################
+# DEPRECATED - Not used anymore
+# We run all services directly without Docker.
+# Kept only for reference. Do NOT rely on this.
+# Updated: 2025-08-21
+###############################################
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: authsvc
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  auth-service:
+    build: ./auth-service
+    env_file:
+      - ./auth-service/.env
+    ports:
+      - "4001:4001"
+    depends_on:
+      - db
+    volumes:
+      - ./auth-service:/app
+      - /app/node_modules
+    command: sh -c "npm ci && npx prisma generate && npm run dev"
+
+  profile-service:
+    build: ./profile-service
+    env_file:
+      - ./profile-service/.env
+    ports:
+      - "4002:4002"
+    depends_on:
+      - auth-service
+      - db
+    volumes:
+      - ./profile-service:/app
+      - /app/node_modules
+    command: sh -c "npm ci && npx prisma generate && npm run dev"
+
+  projects-service:
+    build: ./projects-service
+    env_file:
+      - ./projects-service/.env
+    ports:
+      - "4003:4003"
+    depends_on:
+      - auth-service
+      - db
+    volumes:
+      - ./projects-service:/app
+      - /app/node_modules
+    command: sh -c "npm ci && npx prisma generate && npm run dev"
+
+volumes:
+  postgres_data:

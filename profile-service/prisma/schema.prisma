@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext]
+}
+
+model College {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  profiles  Profile[]
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  collegeId   String
+  department  String
+  year        Int?
+  skills      String[]
+  expertise   String[]
+  linkedIn    String?
+  github      String?
+  twitter     String?
+  resumeUrl   String?
+  bio         String?
+  avatar      String?
+  contactInfo String?
+  collegeMemberId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  college     College  @relation(fields: [collegeId], references: [id])
+  publications    Publication[]
+  personalProjects PersonalProject[]
+  studentBadges    StudentBadge[]
+
+  @@index([collegeId, department, year])
+}
+
+model Publication {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  link      String?
+  year      Int
+  createdAt DateTime @default(now())
+
+  profile   Profile  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([year])
+}
+
+model PersonalProject {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String
+  github      String?
+  demoLink    String?
+  image       String?
+  createdAt   DateTime @default(now())
+
+  profile     Profile  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Badge definition catalog
+model BadgeDefinition {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String?
+  color       String?
+  category    String?
+  rarity      String
+  criteria    String?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+
+  awards      StudentBadge[]
+}
+
+// Awarded badges to students
+model StudentBadge {
+  id            String   @id @default(cuid())
+  studentId     String
+  badgeId       String
+  awardedBy     String
+  awardedByName String?
+  reason        String
+  awardedAt     DateTime @default(now())
+  projectId     String?
+  eventId       String?
+
+  // relations
+  badge   BadgeDefinition @relation(fields: [badgeId], references: [id])
+  student Profile         @relation(fields: [studentId], references: [userId], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([badgeId])
+  @@index([awardedBy])
+  @@index([awardedAt])
+}

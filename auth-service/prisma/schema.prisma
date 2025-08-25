@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [citext]
+}
+
+// Enums
+enum Role {
+  STUDENT
+  FACULTY
+  DEPT_ADMIN
+  PLACEMENTS_ADMIN
+  HEAD_ADMIN
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  REFRESH_TOKEN
+}
+
+// Models
+model User {
+  id              String      @id @default(cuid())
+  email           String      @unique @db.Citext
+  emailVerifiedAt DateTime?
+  passwordHash    String?
+  displayName     String
+  avatarUrl       String?
+  roles           Role[]      @default([])
+  status          UserStatus  @default(PENDING_VERIFICATION)
+  tokenVersion    Int         @default(0)
+  lastLoginAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  preferences     UserPreference?
+  accounts        OAuthAccount[]
+  securityTokens  SecurityToken[]
+
+  @@index([status])
+  @@index([emailVerifiedAt])
+}
+
+model OAuthAccount {
+  id                 String   @id @default(cuid())
+  userId             String
+  provider           String   // "google" | "github" | "credentials"
+  providerAccountId  String
+  accessToken        String?
+  refreshToken       String?
+  expiresAt          DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model SecurityToken {
+  id         String    @id @default(cuid()) // used as token id
+  userId     String
+  tokenHash  String    @unique               // hash of token secret
+  type       TokenType
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
+}
+
+model UserPreference {
+  userId                    String  @id
+  enableEmailNotifications  Boolean @default(true)
+  enableInAppNotifications  Boolean @default(true)
+  timezone                  String  @default("UTC")
+  locale                    String  @default("en")
+  user                      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

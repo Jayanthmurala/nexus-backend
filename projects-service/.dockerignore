@@ -1,0 +1,28 @@
+# Exclude heavy and generated files from build context
+node_modules
+**/node_modules
+npm-debug.log*
+yarn-error.log*
+.pnpm-store
+
+# Build outputs
+/dist
+build
+coverage
+.next
+out
+.tmp
+.cache
+.eslintcache
+
+# VCS and editor
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Env files (compose supplies env_file)
+.env
+.env.*
+!.env.example

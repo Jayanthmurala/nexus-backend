@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext]
+}
+
+
+enum ProjectType {
+  PROJECT
+  RESEARCH
+  PAPER_PUBLISH
+  OTHER
+}
+
+enum ModerationStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum ProgressStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Project {
+  id                String           @id @default(cuid())
+  collegeId         String
+  authorId          String
+  authorName        String
+  authorAvatar      String?
+  title             String
+  description       String
+  projectDuration   String?
+  skills            String[]
+  departments       String[]
+  visibleToAllDepts Boolean          @default(false)
+  projectType       ProjectType
+  moderationStatus  ModerationStatus @default(PENDING_APPROVAL)
+  progressStatus    ProgressStatus   @default(OPEN)
+  maxStudents       Int
+  deadline          DateTime?
+  tags              String[]
+  requirements      String[]
+  outcomes          String[]
+  applications      AppliedProject[]
+  tasks             ProjectTask[]
+  attachments       ProjectAttachment[]
+  comments          Comment[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  archivedAt        DateTime?
+
+  @@index([collegeId])
+  @@index([authorId])
+  @@index([projectType])
+  @@index([moderationStatus])
+  @@index([progressStatus])
+  @@index([createdAt])
+}
+
+model AppliedProject {
+  id                String            @id @default(cuid())
+  projectId         String
+  studentId         String
+  studentName       String
+  studentDepartment String
+  status            ApplicationStatus @default(PENDING)
+  message           String?
+  appliedAt         DateTime          @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, studentId])
+  @@index([projectId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model ProjectTask {
+  id           String     @id @default(cuid())
+  projectId    String
+  title        String
+  assignedToId String?
+  status       TaskStatus @default(TODO)
+  createdAt    DateTime   @default(now())
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model ProjectAttachment {
+  id         String   @id @default(cuid())
+  projectId  String
+  uploaderId String
+  fileName   String
+  fileUrl    String
+  fileType   String
+  createdAt  DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([uploaderId])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  projectId  String
+  taskId     String?
+  authorId   String
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([taskId])
+  @@index([authorId])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
