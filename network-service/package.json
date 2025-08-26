@@ -1,0 +1,35 @@
+{
+  "name": "@nexus/network-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:push": "prisma db push",
+    "db:migrate": "tsx scripts/migrate.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.5.0",
+    "@fastify/swagger": "^8.15.0",
+    "@fastify/swagger-ui": "^1.10.2",
+    "@prisma/client": "^6.14.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.29.1",
+    "fastify-type-provider-zod": "^1.2.0",
+    "jose": "^5.3.0",
+    "pg": "^8.16.3",
+    "pino": "^9.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.11",
+    "@types/pg": "^8.15.5",
+    "prisma": "^6.14.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

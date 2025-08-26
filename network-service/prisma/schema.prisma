@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Visibility {
+  PUBLIC
+  COLLEGE
+}
+
+enum PostType {
+  STANDARD
+  BADGE_AWARD
+  SHARE
+  AD
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  HIDDEN
+  REJECTED
+}
+
+enum ReactionType {
+  LIKE
+}
+
+enum ConnectionRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELED
+  BLOCKED
+}
+
+enum AdStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+  EXHAUSTED
+}
+
+model Post {
+  id                String           @id @default(cuid())
+  authorId          String
+  authorDisplayName String
+  authorAvatarUrl   String?
+  authorCollegeId   String
+  visibility        Visibility
+  type              PostType
+  content           String?
+  shareOfPostId     String?
+  likeCount         Int               @default(0)
+  commentCount      Int               @default(0)
+  shareCount        Int               @default(0)
+  moderationStatus  ModerationStatus  @default(APPROVED)
+  deletedAt         DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Badge award payload
+  badgeAwardJson    String?
+  sourceEventId     String?
+  isContentLocked   Boolean           @default(true)
+
+  // AD fields
+  adCampaignId      String?
+  adMetaJson        String?
+  adTargetJson      String?
+  adBudgetJson      String?
+  adStatus          AdStatus?
+
+  media             PostMedia[]
+  reactions         Reaction[]
+  comments          Comment[]
+
+  @@index([authorId, createdAt])
+  @@index([authorCollegeId, visibility, createdAt])
+  @@index([shareOfPostId])
+  @@index([type, createdAt])
+  @@index([moderationStatus, createdAt])
+}
+
+model PostMedia {
+  id        String   @id @default(cuid())
+  postId    String
+  mediaId   String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mediaRef  Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, mediaId])
+}
+
+model Media {
+  id           String   @id @default(cuid())
+  ownerUserId  String
+  storageKey   String
+  url          String
+  mimeType     String
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  blurhash     String?
+  createdAt    DateTime @default(now())
+
+  postMedia    PostMedia[]
+
+  @@index([ownerUserId, createdAt])
+}
+
+model Reaction {
+  id        String       @id @default(cuid())
+  postId    String
+  userId    String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, type])
+  @@index([postId, createdAt])
+}
+
+model Comment {
+  id               String           @id @default(cuid())
+  postId           String
+  userId           String
+  userDisplayName  String
+  userAvatarUrl    String?
+  userCollegeId    String
+  content          String
+  moderationStatus ModerationStatus @default(APPROVED)
+  deletedAt        DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  post             Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Follow {
+  followerId String
+  followeeId String
+  createdAt  DateTime @default(now())
+
+  @@id([followerId, followeeId])
+  @@index([followeeId, createdAt])
+}
+
+model ConnectionRequest {
+  id           String                  @id @default(cuid())
+  requesterId  String
+  addresseeId  String
+  status       ConnectionRequestStatus @default(PENDING)
+  note         String?
+  createdAt    DateTime                @default(now())
+  decidedAt    DateTime?
+
+  @@index([requesterId, createdAt])
+  @@index([addresseeId, createdAt])
+}
+
+model Connection {
+  userA     String
+  userB     String
+  createdAt DateTime @default(now())
+
+  @@id([userA, userB])
+}
+
+model AdImpression {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model AdClick {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+  @@index([userId, createdAt])
+}
