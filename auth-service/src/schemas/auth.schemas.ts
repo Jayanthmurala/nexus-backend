@@ -8,22 +8,36 @@ export const rolesEnum = z.enum([
   "HEAD_ADMIN",
 ]);
 
+export const superAdminRoleEnum = z.enum([
+  "STUDENT",
+  "FACULTY",
+  "DEPT_ADMIN",
+  "PLACEMENTS_ADMIN",
+  "HEAD_ADMIN",
+  "SUPER_ADMIN",
+]);
+
 export const registerBodySchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  displayName: z.string().min(2),
+  displayName: z.string().min(2, "Display name must be at least 2 characters long"),
+  email: z.string().email("Please provide a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters long"),
+  role: rolesEnum.optional().default("STUDENT"),
+  collegeId: z.string().min(1, "College selection is required"),
+  department: z.string().min(1, "Department selection is required"),
+  collegeMemberId: z.string().optional(),
+  year: z.number().int().min(1, "Year must be between 1 and 6").max(6, "Year must be between 1 and 6").optional(),
 });
 
 export const loginBodySchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.string().email("Please provide a valid email address"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export const authUserSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   displayName: z.string(),
-  roles: z.array(rolesEnum),
+  roles: z.array(superAdminRoleEnum),
   avatarUrl: z.string().url().nullable().optional(),
 });
 
@@ -73,4 +87,15 @@ export const verifyEmailBodySchema = z.object({
 
 export const resendVerificationBodySchema = z.object({
   email: z.string().email(),
+});
+
+export const superAdminRegisterBodySchema = z.object({
+  displayName: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8),
+  role: superAdminRoleEnum.optional().default("SUPER_ADMIN"),
+  collegeId: z.string().optional(),
+  department: z.string().optional(),
+  collegeMemberId: z.string().optional(),
+  year: z.number().int().min(1).max(6).optional(),
 });

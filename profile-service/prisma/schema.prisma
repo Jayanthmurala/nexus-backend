@@ -9,39 +9,42 @@ datasource db {
   extensions = [citext]
 }
 
-model College {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
+model Profile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  name             String?  // Editable display name (separate from auth displayName)
+  bio              String?
+  skills           String[] // For students
+  linkedIn         String?
+  github           String?  // For students
+  twitter          String?  // For faculty
+  resumeUrl        String?  // For students
+  avatar           String?
+  contactInfo      String?
+  phoneNumber      String?
+  alternateEmail   String?  // For students
+  experiences      Experience[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  profiles  Profile[]
+  publications     Publication[]
+  personalProjects PersonalProject[]
+  studentBadges    StudentBadge[]
 }
 
-model Profile {
+model Experience {
   id          String   @id @default(cuid())
-  userId      String   @unique
-  collegeId   String
-  department  String
-  year        Int?
-  skills      String[]
-  expertise   String[]
-  linkedIn    String?
-  github      String?
-  twitter     String?
-  resumeUrl   String?
-  bio         String?
-  avatar      String?
-  contactInfo String?
-  collegeMemberId String?
+  profileId   String
+  area        String   // AI, IoT, Machine Learning, etc.
+  level       String   // Beginner, Intermediate, Advanced, Expert
+  yearsExp    Int?     // years of experience in this area
+  description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  college     College  @relation(fields: [collegeId], references: [id])
-  publications    Publication[]
-  personalProjects PersonalProject[]
-  studentBadges    StudentBadge[]
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  @@index([collegeId, department, year])
+  @@index([profileId])
 }
 
 model Publication {

@@ -6,7 +6,14 @@ import { prisma } from "../db";
 import { env } from "../config/env";
 import { hashPassword, verifyPassword, hashSecret, verifySecret } from "../utils/crypto";
 import { signAccessToken, verifyAccessToken } from "../utils/jwt";
-import { authSuccessResponseSchema, loginBodySchema, registerBodySchema, errorResponseSchema, oauthExchangeBodySchema, forgotPasswordBodySchema, resetPasswordBodySchema, verifyEmailBodySchema, resendVerificationBodySchema, messageResponseSchema } from "../schemas/auth.schemas";
+import { authSuccessResponseSchema, loginBodySchema, errorResponseSchema, oauthExchangeBodySchema, forgotPasswordBodySchema, resetPasswordBodySchema, verifyEmailBodySchema, resendVerificationBodySchema, messageResponseSchema, registerBodySchema, superAdminRegisterBodySchema } from "../schemas/auth.schemas";
+
+const usersQuerySchema = z.object({
+  limit: z.string().optional(),
+  offset: z.string().optional(),
+  q: z.string().optional(),
+  role: z.enum(["STUDENT", "FACULTY", "DEPT_ADMIN", "PLACEMENTS_ADMIN", "HEAD_ADMIN"]).optional(),
+});
 import { sendPasswordResetEmail, sendVerificationEmail } from "../emails/mailer";
 
 const REFRESH_COOKIE = "rt";
@@ -77,6 +84,30 @@ async function rotateRefreshToken(oldCookie: string | undefined, reply: any) {
 }
 
 // Fetch minimal profile from OAuth providers
+async function initializeUserProfile(userId: string, accessToken: string) {
+  const profileServiceUrl = process.env.PROFILE_SERVICE_URL || "http://localhost:4002";
+  
+  try {
+    const response = await fetch(`${profileServiceUrl}/v1/profiles/me`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({}), // Empty profile data to initialize
+    });
+
+    if (!response.ok) {
+      throw new Error(`Profile initialization failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Profile initialization error:", error);
+    throw error;
+  }
+}
+
 async function getGoogleProfile(accessToken: string) {
   const resp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -128,14 +159,95 @@ export async function authRoutes(app: FastifyInstance) {
     schema: {
       tags: ["auth"],
       body: registerBodySchema,
-      response: { 200: authSuccessResponseSchema, 409: errorResponseSchema },
+      response: { 201: authSuccessResponseSchema, 400: errorResponseSchema, 409: errorResponseSchema },
     },
   }, async (req, reply) => {
-    const { email, password, displayName } = req.body as z.infer<typeof registerBodySchema>;
+    const { displayName, email, password, role, collegeId, department, collegeMemberId, year } = req.body as z.infer<typeof registerBodySchema>;
+    
+    try {
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return reply.code(409).send({ message: "Email already in use" });
+      // Check if email already exists
+      const existingUser = await prisma.user.findUnique({ where: { email } });
+      if (existingUser) {
+        return reply.code(409).send({ 
+          message: `Registration failed: The email address '${email}' is already registered. Please use a different email or try logging in.` 
+        });
+      }
+
+      // Validate college exists and is active
+      const college = await prisma.college.findUnique({ where: { id: collegeId } });
+      if (!college) {
+        return reply.code(400).send({ 
+          message: `Registration failed: College with ID '${collegeId}' not found. Please contact your administrator or verify the college ID.` 
+        });
+      }
+      if (!college.isActive) {
+        return reply.code(400).send({ 
+          message: `Registration failed: College '${college.name}' is currently inactive. Please contact your administrator.` 
+        });
+      }
+
+      // Validate department exists in college
+      if (!college.departments.includes(department)) {
+        return reply.code(400).send({ 
+          message: `Registration failed: Department '${department}' is not available in '${college.name}'. Available departments: ${college.departments.join(', ')}.` 
+        });
+      }
+
+      // Check if collegeMemberId is unique within the college (if provided)
+      if (collegeMemberId) {
+        const existingMember = await prisma.user.findFirst({
+          where: {
+            collegeId,
+            collegeMemberId,
+          },
+        });
+        if (existingMember) {
+          return reply.code(409).send({ 
+            message: `Registration failed: College member ID '${collegeMemberId}' already exists in '${college.name}'. Please use a different member ID.` 
+          });
+        }
+      }
+
+      // Validate year is provided for students
+      if (role === "STUDENT" && !year) {
+        return reply.code(400).send({ 
+          message: "Registration failed: Year is required for student registration. Please provide your academic year (1-6)." 
+        });
+      }
+    } catch (validationError: any) {
+      // Handle Zod validation errors with clear field-specific messages
+      if (validationError.issues) {
+        const fieldErrors = validationError.issues.map((issue: any) => {
+          const field = issue.path.join('.');
+          switch (field) {
+            case 'email':
+              return `Email: ${issue.message.toLowerCase()}. Please provide a valid email address.`;
+            case 'password':
+              return `Password: Must be at least 8 characters long.`;
+            case 'displayName':
+              return `Display Name: ${issue.message.toLowerCase()}. Please provide your full name.`;
+            case 'collegeId':
+              return `College: This field is required. Please select your college.`;
+            case 'department':
+              return `Department: This field is required. Please select your department.`;
+            case 'role':
+              return `Role: Invalid role selected. Available roles: STUDENT, FACULTY, DEPT_ADMIN, PLACEMENTS_ADMIN, HEAD_ADMIN.`;
+            case 'year':
+              return `Year: Must be a number between 1 and 6.`;
+            default:
+              return `${field}: ${issue.message}`;
+          }
+        });
+        
+        return reply.code(400).send({ 
+          message: `Registration failed due to validation errors:\n• ${fieldErrors.join('\n• ')}` 
+        });
+      }
+      
+      return reply.code(400).send({ 
+        message: "Registration failed: Invalid request data. Please check all required fields and try again." 
+      });
     }
 
     const user = await prisma.user.create({
@@ -143,8 +255,12 @@ export async function authRoutes(app: FastifyInstance) {
         email,
         passwordHash: await hashPassword(password),
         displayName,
-        roles: ["STUDENT"],
+        roles: [role],
         status: "ACTIVE",
+        collegeId,
+        department,
+        year: role === "STUDENT" ? year : undefined,
+        collegeMemberId,
         preferences: { create: {} },
       },
     });
@@ -158,7 +274,86 @@ export async function authRoutes(app: FastifyInstance) {
 
     await issueRefreshTokenCookie(user.id, reply);
 
-    return reply.send({
+    // Initialize profile in profile-service
+    try {
+      await initializeUserProfile(user.id, accessToken);
+    } catch (error) {
+      console.warn("Failed to initialize user profile:", error);
+      // Don't fail registration if profile initialization fails
+    }
+
+    return reply.code(201).send({
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        roles: user.roles,
+        avatarUrl: user.avatarUrl ?? null,
+      },
+    });
+  });
+
+  // Super Admin Registration - No college/department validation required
+  f.post("/v1/auth/register-super-admin", {
+    schema: {
+      tags: ["auth"],
+      summary: "Register Super Admin",
+      description: "Register a super admin user without college/department requirements",
+      body: superAdminRegisterBodySchema,
+      response: { 201: authSuccessResponseSchema, 400: errorResponseSchema, 409: errorResponseSchema },
+    },
+  }, async (req, reply) => {
+    const { displayName, email, password, role, collegeId, department, collegeMemberId, year } = req.body as z.infer<typeof superAdminRegisterBodySchema>;
+
+    // Check if email already exists
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return reply.code(409).send({ message: "Email already in use" });
+    }
+
+    // For super admin, college and department are optional
+    let validatedCollegeId = null;
+    let validatedDepartment = null;
+
+    if (collegeId && department) {
+      const college = await prisma.college.findUnique({ where: { id: collegeId } });
+      if (!college || !college.isActive) {
+        return reply.code(400).send({ message: "Invalid or inactive college" });
+      }
+      if (!college.departments.includes(department)) {
+        return reply.code(400).send({ message: "Department not available in selected college" });
+      }
+      validatedCollegeId = collegeId;
+      validatedDepartment = department;
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await hashPassword(password),
+        displayName,
+        roles: [role as any], // Type assertion for SUPER_ADMIN
+        status: "ACTIVE",
+        emailVerifiedAt: new Date(), // Auto-verify super admin
+        collegeId: validatedCollegeId,
+        department: validatedDepartment,
+        year: role === "STUDENT" ? year : undefined,
+        collegeMemberId,
+        preferences: { create: {} },
+      },
+    });
+
+    const accessToken = await signAccessToken(user.id, {
+      email: user.email,
+      roles: user.roles,
+      displayName: user.displayName,
+      tokenVersion: user.tokenVersion,
+    });
+
+    await issueRefreshTokenCookie(user.id, reply);
+
+    return reply.code(201).send({
       accessToken,
       user: {
         id: user.id,
@@ -178,17 +373,37 @@ export async function authRoutes(app: FastifyInstance) {
     },
   }, async (req, reply) => {
     const { email, password } = req.body as z.infer<typeof loginBodySchema>;
+    
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.passwordHash) {
-      return reply.code(400).send({ message: "Invalid credentials" });
+      return reply.code(400).send({ 
+        message: "Login failed: Invalid email or password. Please check your credentials and try again." 
+      });
     }
-    if (user.status === "SUSPENDED" || user.status === "DELETED") {
-      return reply.code(403).send({ message: "User is not allowed to login" });
+    
+    if (user.status === "SUSPENDED") {
+      return reply.code(403).send({ 
+        message: "Login failed: Your account has been suspended. Please contact your administrator for assistance." 
+      });
+    }
+    
+    if (user.status === "DELETED") {
+      return reply.code(403).send({ 
+        message: "Login failed: This account no longer exists. Please contact your administrator if you believe this is an error." 
+      });
+    }
+    
+    if (user.status === "PENDING_VERIFICATION") {
+      return reply.code(403).send({ 
+        message: "Login failed: Your email address needs to be verified. Please check your email for a verification link." 
+      });
     }
 
     const ok = await verifyPassword(user.passwordHash, password);
     if (!ok) {
-      return reply.code(400).send({ message: "Invalid credentials" });
+      return reply.code(400).send({ 
+        message: "Login failed: Invalid email or password. Please check your credentials and try again." 
+      });
     }
 
     const accessToken = await signAccessToken(user.id, {
@@ -526,6 +741,124 @@ export async function authRoutes(app: FastifyInstance) {
         avatarUrl: user.avatarUrl ?? null,
       },
     });
+  });
+
+  // Public: List users directory with optional filters
+  app.get("/v1/users", {
+    schema: {
+      tags: ["users"],
+      querystring: usersQuerySchema,
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { limit = "20", offset = "0", q, role } = req.query as z.infer<typeof usersQuerySchema>;
+    
+    const where: any = {};
+    if (q) {
+      where.OR = [
+        { displayName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ];
+    }
+    if (role) {
+      where.roles = { has: role };
+    }
+
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: { displayName: "asc" },
+      take: parseInt(limit),
+      skip: parseInt(offset),
+    });
+
+    // Transform the response to only include safe fields
+    const safeUsers = users.map(user => ({
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      roles: user.roles,
+      collegeId: (user as any).collegeId,
+      department: (user as any).department,
+      year: (user as any).year,
+      createdAt: user.createdAt,
+    }));
+
+    return reply.send({ users: safeUsers });
+  });
+
+  // Protected: Get user by ID (for inter-service communication)
+  app.get("/v1/users/:userId", {
+    schema: {
+      tags: ["users"],
+      params: z.object({ userId: z.string().cuid() }),
+      response: { 200: z.any(), 404: errorResponseSchema },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        displayName: true,
+        email: true,
+        avatarUrl: true,
+        roles: true,
+        collegeId: true,
+        department: true,
+        year: true,
+        collegeMemberId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
+      return reply.code(404).send({ message: "User not found" });
+    }
+
+    return reply.send({ user });
+  });
+
+  // Protected: Update user displayName (for inter-service communication)
+  app.put("/v1/users/:userId", {
+    schema: {
+      tags: ["users"],
+      params: z.object({ userId: z.string().cuid() }),
+      body: z.object({ displayName: z.string().min(1).max(100) }),
+      response: { 200: z.any(), 404: errorResponseSchema },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+    const { displayName } = req.body as { displayName: string };
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return reply.code(404).send({ message: "User not found" });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { displayName },
+      select: {
+        id: true,
+        displayName: true,
+        email: true,
+        avatarUrl: true,
+        roles: true,
+        collegeId: true,
+        department: true,
+        year: true,
+        collegeMemberId: true,
+        updatedAt: true,
+      },
+    });
+
+    return reply.send({ user: updatedUser });
   });
 }
 

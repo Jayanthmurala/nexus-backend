@@ -119,6 +119,17 @@ async function main() {
     await run(client, `CREATE INDEX IF NOT EXISTS "Comment_post_createdAt_idx" ON ${schema}."Comment" ("postId","createdAt");`);
     await run(client, `CREATE INDEX IF NOT EXISTS "Comment_user_createdAt_idx" ON ${schema}."Comment" ("userId","createdAt");`);
 
+    // Bookmark table
+    await run(client, `CREATE TABLE IF NOT EXISTS ${schema}."Bookmark" (
+      id TEXT PRIMARY KEY,
+      "postId" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT "Bookmark_post_fk" FOREIGN KEY ("postId") REFERENCES ${schema}."Post"(id) ON DELETE CASCADE
+    );`);
+    await run(client, `CREATE UNIQUE INDEX IF NOT EXISTS "Bookmark_unique_post_user" ON ${schema}."Bookmark" ("postId","userId");`);
+    await run(client, `CREATE INDEX IF NOT EXISTS "Bookmark_post_createdAt_idx" ON ${schema}."Bookmark" ("postId","createdAt");`);
+
     await run(client, `CREATE TABLE IF NOT EXISTS ${schema}."Follow" (
       "followerId" TEXT NOT NULL,
       "followeeId" TEXT NOT NULL,
