@@ -18,4 +18,7 @@ export const env = {
   AUTH_JWT_AUDIENCE: process.env.AUTH_JWT_AUDIENCE ?? "nexus",
 
   PROFILE_BASE_URL: process.env.PROFILE_BASE_URL ?? "http://localhost:4002",
+  AUTH_BASE_URL: process.env.AUTH_BASE_URL ?? "http://localhost:4001",
+  REDIS_URL: process.env.REDIS_URL,
+  FRONTEND_URL: process.env.FRONTEND_URL ?? "http://localhost:3000",
 };
