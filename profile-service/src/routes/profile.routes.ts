@@ -3,11 +3,17 @@ import { z } from "zod";
 import axios from "axios";
 import { prisma } from "../db";
 import { requireAuth, requireRole } from "../middleware/auth";
+import { errorResponseSchema, messageResponseSchema } from "../schemas/profile.schemas";
 
 // Validation schemas
 const updateProfileSchema = z.object({
-  // User model fields (only displayName is editable)
+  // User model fields (displayName and avatarUrl are editable)
   displayName: z.string().min(1).max(100).optional(),
+  avatarUrl: z.string().url().optional().or(z.literal("")),
+  
+  // User model fields that need to be updated via auth service
+  year: z.number().int().min(1).max(6).optional(),
+  department: z.string().max(100).optional(),
   
   // Profile model fields (all editable)
   name: z.string().min(1).max(100).optional(),
@@ -18,12 +24,9 @@ const updateProfileSchema = z.object({
   github: z.string().url().optional().or(z.literal("")),
   twitter: z.string().url().optional().or(z.literal("")),
   resumeUrl: z.string().url().optional().or(z.literal("")),
-  avatar: z.string().url().optional().or(z.literal("")),
   contactInfo: z.string().max(500).optional(),
   phoneNumber: z.string().max(20).optional(),
   alternateEmail: z.string().email().optional(),
-  year: z.number().int().min(1).max(6).optional(),
-  department: z.string().max(100).optional(),
 });
 
 const createProfileSchema = z.object({
@@ -34,7 +37,6 @@ const createProfileSchema = z.object({
   github: z.string().url().optional().or(z.literal("")),
   twitter: z.string().url().optional().or(z.literal("")),
   resumeUrl: z.string().url().optional().or(z.literal("")),
-  avatar: z.string().url().optional().or(z.literal("")),
   contactInfo: z.string().max(500).optional(),
   phoneNumber: z.string().max(20).optional(),
   alternateEmail: z.string().email().optional(),
@@ -64,9 +66,10 @@ const publicationSchema = z.object({
 const badgeDefinitionSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
-  icon: z.string().url().optional(),
+  icon: z.string().optional(), // Allow any string (emojis or URLs)
   color: z.string().optional(),
   category: z.string().optional(),
+  criteria: z.string().optional(), // Add missing criteria field
   rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).default("COMMON"),
 });
 
@@ -74,6 +77,9 @@ const awardBadgeSchema = z.object({
   badgeDefinitionId: z.string().cuid(),
   userId: z.string().cuid(),
   reason: z.string().min(1, "Reason is required"),
+  projectId: z.string().cuid().optional(),
+  eventId: z.string().cuid().optional(),
+  awardedByName: z.string().optional(),
 });
 
 export default async function profileRoutes(app: FastifyInstance) {
@@ -241,14 +247,20 @@ export default async function profileRoutes(app: FastifyInstance) {
     const userId = req.user!.sub;
 
     // Separate user model fields from profile model fields
-    const { displayName, ...profileData } = data;
+    const { displayName, avatarUrl, year, department, ...profileData } = data;
 
-    // Update displayName in auth service if provided
-    if (displayName) {
+    // Update user model fields in auth service if provided
+    if (displayName || avatarUrl || year !== undefined || department) {
       try {
         const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+        const updateData: any = {};
+        if (displayName) updateData.displayName = displayName;
+        if (avatarUrl) updateData.avatarUrl = avatarUrl;
+        if (year !== undefined) updateData.year = year;
+        if (department) updateData.department = department;
+        
         await axios.put(`${authServiceUrl}/v1/users/${userId}`, 
-          { displayName },
+          updateData,
           {
             headers: {
               'Authorization': req.headers.authorization || '',
@@ -257,8 +269,8 @@ export default async function profileRoutes(app: FastifyInstance) {
           }
         );
       } catch (error) {
-        console.error('Failed to update displayName in auth service:', error);
-        return reply.code(500).send({ message: "Failed to update display name" });
+        console.error('Failed to update user data in auth service:', error);
+        return reply.code(500).send({ message: "Failed to update user data" });
       }
     }
 
@@ -811,24 +823,22 @@ export default async function profileRoutes(app: FastifyInstance) {
   app.delete("/v1/profile/experiences/:id", {
     preHandler: requireAuth,
     schema: {
-      tags: ["experiences"],
+      tags: ["profiles"],
       params: z.object({ id: z.string().cuid() }),
-      response: { 200: z.any() },
+      response: { 200: z.any(), 404: errorResponseSchema },
     },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const userId = req.user!.sub;
 
-    // Verify ownership through profile
-    const existingExperience = await prisma.experience.findFirst({
-      where: { 
-        id,
-        profile: { userId }
-      },
+    // Check if experience exists and belongs to user
+    const experience = await prisma.experience.findUnique({
+      where: { id },
+      include: { profile: true },
     });
 
-    if (!existingExperience) {
-      return reply.code(404).send({ message: "Experience not found or access denied" });
+    if (!experience || experience.profile.userId !== userId) {
+      return reply.code(404).send({ message: "Experience not found" });
     }
 
     await prisma.experience.delete({
@@ -836,6 +846,141 @@ export default async function profileRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ message: "Experience deleted successfully" });
+  });
+
+  // Skills CRUD endpoints
+  
+  // Protected: Get my skills
+  app.get("/v1/profile/me/skills", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const userId = req.user!.sub;
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: profile?.skills || [] });
+  });
+
+  // Protected: Update my skills
+  app.put("/v1/profile/me/skills", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      body: z.object({ skills: z.array(z.string()) }),
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const { skills } = req.body as { skills: string[] };
+    const userId = req.user!.sub;
+
+    // Validate and clean skills
+    const cleanedSkills = skills
+      .map(skill => skill.trim())
+      .filter(skill => skill.length > 0)
+      .slice(0, 50); // Limit to 50 skills
+
+    const profile = await prisma.profile.upsert({
+      where: { userId },
+      update: { skills: cleanedSkills },
+      create: {
+        userId,
+        skills: cleanedSkills,
+      },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: profile.skills });
+  });
+
+  // Protected: Add a skill
+  app.post("/v1/profile/me/skills", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      body: z.object({ skill: z.string().min(1).max(100) }),
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const { skill } = req.body as { skill: string };
+    const userId = req.user!.sub;
+
+    const cleanedSkill = skill.trim();
+    if (!cleanedSkill) {
+      return reply.code(400).send({ message: "Skill cannot be empty" });
+    }
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { skills: true },
+    });
+
+    const currentSkills = profile?.skills || [];
+    
+    // Check if skill already exists (case insensitive)
+    if (currentSkills.some(s => s.toLowerCase() === cleanedSkill.toLowerCase())) {
+      return reply.code(400).send({ message: "Skill already exists" });
+    }
+
+    // Limit to 50 skills
+    if (currentSkills.length >= 50) {
+      return reply.code(400).send({ message: "Maximum 50 skills allowed" });
+    }
+
+    const updatedSkills = [...currentSkills, cleanedSkill];
+
+    const updatedProfile = await prisma.profile.upsert({
+      where: { userId },
+      update: { skills: updatedSkills },
+      create: {
+        userId,
+        skills: updatedSkills,
+      },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: updatedProfile.skills });
+  });
+
+  // Protected: Remove a skill
+  app.delete("/v1/profile/me/skills/:skill", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      params: z.object({ skill: z.string() }),
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const { skill } = req.params as { skill: string };
+    const userId = req.user!.sub;
+
+    const decodedSkill = decodeURIComponent(skill);
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { skills: true },
+    });
+
+    const currentSkills = profile?.skills || [];
+    const updatedSkills = currentSkills.filter(s => s !== decodedSkill);
+
+    const updatedProfile = await prisma.profile.upsert({
+      where: { userId },
+      update: { skills: updatedSkills },
+      create: {
+        userId,
+        skills: updatedSkills,
+      },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: updatedProfile.skills });
   });
 
   // Protected: Create badge definition (Faculty/Admin only)
@@ -848,14 +993,39 @@ export default async function profileRoutes(app: FastifyInstance) {
     },
   }, async (req, reply) => {
     const data = req.body as z.infer<typeof badgeDefinitionSchema>;
+    
+    console.log('Badge creation request body:', JSON.stringify(req.body, null, 2));
+    console.log('Validated data:', JSON.stringify(data, null, 2));
+
+    // Explicitly handle optional fields to ensure they're saved properly
+    const createData: any = {
+      name: data.name,
+      description: data.description,
+      rarity: data.rarity,
+      createdBy: req.user!.sub,
+    };
+
+    // Add optional fields only if they exist and are not empty
+    if (data.icon && data.icon.trim()) {
+      createData.icon = data.icon;
+    }
+    if (data.color && data.color.trim()) {
+      createData.color = data.color;
+    }
+    if (data.category && data.category.trim()) {
+      createData.category = data.category;
+    }
+    if (data.criteria && data.criteria.trim()) {
+      createData.criteria = data.criteria;
+    }
+
+    console.log('Final create data:', JSON.stringify(createData, null, 2));
 
     const badgeDefinition = await prisma.badgeDefinition.create({
-      data: {
-        ...data,
-        createdBy: req.user!.sub,
-      },
+      data: createData,
     });
 
+    console.log('Created badge definition:', JSON.stringify(badgeDefinition, null, 2));
     return reply.code(201).send({ badgeDefinition });
   });
 
@@ -869,6 +1039,10 @@ export default async function profileRoutes(app: FastifyInstance) {
     },
   }, async (req, reply) => {
     const data = req.body as z.infer<typeof awardBadgeSchema>;
+    
+    console.log('Badge award request body:', JSON.stringify(req.body, null, 2));
+    console.log('Validated data:', JSON.stringify(data, null, 2));
+    
     // Verify the target user exists in auth service
     const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
     try {
@@ -912,6 +1086,9 @@ export default async function profileRoutes(app: FastifyInstance) {
         badgeId: data.badgeDefinitionId,
         awardedBy: req.user!.sub,
         reason: data.reason,
+        projectId: data.projectId,
+        eventId: data.eventId,
+        awardedByName: data.awardedByName,
       },
       include: {
         badge: true,
@@ -919,6 +1096,75 @@ export default async function profileRoutes(app: FastifyInstance) {
     });
 
     return reply.code(201).send({ badge });
+  });
+
+  // Protected: Export badge awards data (Faculty/Admin only)
+  app.get("/v1/badges/export", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
+    schema: {
+      tags: ["badges"],
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    try {
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      
+      // Fetch all badge awards with badge definitions 
+      const awards = await prisma.studentBadge.findMany({
+        include: {
+          badge: true,
+        },
+        orderBy: {
+          awardedAt: 'desc',
+        },
+      });
+
+      // Fetch student details from auth service for each unique student
+      const studentIds = [...new Set(awards.map(award => award.studentId))];
+      const studentDetails = new Map();
+
+      for (const studentId of studentIds) {
+        try {
+          const userResponse = await axios.get(`${authServiceUrl}/v1/users/${studentId}`, {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          });
+          if (userResponse.data && userResponse.data.user) {
+            studentDetails.set(studentId, userResponse.data.user);
+          }
+        } catch (error) {
+          console.error(`Failed to fetch details for student ${studentId}:`, error);
+        }
+      }
+
+      // Format export data
+      const exportData = awards.map(award => {
+        const studentInfo = studentDetails.get(award.studentId);
+        console.log(`Export mapping for ${award.studentId}:`, studentInfo);
+        return {
+          badgeName: award.badge.name,
+          studentName: studentInfo?.displayName || studentInfo?.name || 'Unknown',
+          collegeMemberId: studentInfo?.collegeMemberId || 'N/A',
+          department: studentInfo?.department || 'N/A',
+          awardedAt: award.awardedAt,
+          awardedByName: award.awardedByName || 'Unknown',
+          reason: award.reason,
+          badgeCategory: award.badge.category || 'N/A',
+          badgeRarity: award.badge.rarity,
+          projectName: award.projectId ? `Project-${award.projectId}` : 'N/A', // TODO: Fetch actual project name
+          eventName: award.eventId ? `Event-${award.eventId}` : 'N/A', // TODO: Fetch actual event name
+        };
+      });
+
+      return reply.send(exportData);
+    } catch (error) {
+      console.error('Export error:', error);
+      return reply.code(500).send({
+        error: 'Export failed',
+        message: 'Failed to export badge data',
+      });
+    }
   });
 
   // Public: List badge definitions
@@ -958,28 +1204,61 @@ export default async function profileRoutes(app: FastifyInstance) {
     reply.code(200).send({ badges });
   });
 
-  // Get recent badge awards
+  // Protected: Get recent badge awards (Faculty/Admin only)
   app.get("/v1/badges/recent", {
-    preHandler: [requireAuth],
+    preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
     schema: {
       tags: ["badges"],
       querystring: z.object({
-        limit: z.coerce.number().min(1).max(100).default(10),
+        limit: z.string().optional(),
       }),
       response: { 200: z.any() },
     },
   }, async (req, reply) => {
-    const { limit } = req.query as { limit: number };
+    const { limit } = req.query as { limit?: string };
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
 
     const awards = await prisma.studentBadge.findMany({
-      take: limit,
+      take: limitNum,
+      orderBy: { awardedAt: "desc" },
       include: {
         badge: true,
       },
-      orderBy: { awardedAt: "desc" },
     });
 
-    reply.code(200).send({ awards });
+    // Fetch student details for display names and college member IDs
+    const studentIds = [...new Set(awards.map(award => award.studentId))];
+    const studentDetails = new Map();
+
+    for (const studentId of studentIds) {
+      try {
+        const userResponse = await axios.get(`${authServiceUrl}/v1/users/${studentId}`, {
+          headers: {
+            Authorization: req.headers.authorization,
+          },
+        });
+        console.log(`Auth service response for student ${studentId}:`, userResponse.data);
+        if (userResponse.data && userResponse.data.user) {
+          studentDetails.set(studentId, userResponse.data.user);
+        }
+      } catch (error) {
+        console.error(`Failed to fetch details for student ${studentId}:`, error);
+      }
+    }
+
+    // Enhance awards with student details
+    const enhancedAwards = awards.map(award => {
+      const studentInfo = studentDetails.get(award.studentId);
+      console.log(`Student ${award.studentId} details:`, studentInfo);
+      return {
+        ...award,
+        studentName: studentInfo?.displayName || studentInfo?.name,
+        collegeMemberId: studentInfo?.collegeMemberId,
+      };
+    });
+
+    return reply.send({ awards: enhancedAwards });
   });
 
   // Get badge award counts
@@ -1004,5 +1283,166 @@ export default async function profileRoutes(app: FastifyInstance) {
     }
 
     reply.code(200).send({ counts });
+  });
+
+  // Check event creation eligibility for a user
+  app.get("/v1/badges/eligibility/:userId", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      params: z.object({
+        userId: z.string().cuid(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+    const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+
+    try {
+      // Get user's college info from auth service
+      const userResponse = await axios.get(`${authServiceUrl}/v1/users/${userId}`, {
+        headers: {
+          Authorization: req.headers.authorization,
+        },
+      });
+      
+      const user = userResponse.data?.user;
+      if (!user?.collegeId) {
+        return reply.code(400).send({ 
+          error: "User college information not found",
+          canCreate: false,
+          missing: []
+        });
+      }
+
+      // Check cache first
+      const cached = await prisma.badgeEligibilityCache.findUnique({
+        where: { userId },
+      });
+
+      if (cached && cached.expiresAt > new Date()) {
+        return reply.send({
+          canCreate: cached.canCreate,
+          badgeCount: cached.badgeCount,
+          categories: cached.categories,
+          lastChecked: cached.lastChecked,
+        });
+      }
+
+      // Get badge policy for user's college
+      const policy = await prisma.badgePolicy.findUnique({
+        where: { collegeId: user.collegeId },
+      });
+
+      const requiredBadges = policy?.eventCreationRequired || 8;
+      const requiredCategories = policy?.categoryDiversityMin || 4;
+
+      // Get user's badges with categories
+      const userBadges = await prisma.studentBadge.findMany({
+        where: { studentId: userId },
+        include: {
+          badge: {
+            select: { category: true, isActive: true },
+          },
+        },
+      });
+
+      const activeBadges = userBadges.filter(award => award.badge.isActive);
+      const categories = [...new Set(activeBadges.map(award => award.badge.category).filter(Boolean))];
+      
+      const canCreate = activeBadges.length >= requiredBadges && categories.length >= requiredCategories;
+
+      // Update cache
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+      await prisma.badgeEligibilityCache.upsert({
+        where: { userId },
+        update: {
+          canCreate,
+          badgeCount: activeBadges.length,
+          categories,
+          lastChecked: new Date(),
+          expiresAt,
+        },
+        create: {
+          userId,
+          canCreate,
+          badgeCount: activeBadges.length,
+          categories,
+          expiresAt,
+        },
+      });
+
+      return reply.send({
+        canCreate,
+        badgeCount: activeBadges.length,
+        requiredBadges,
+        categories,
+        requiredCategories,
+        lastChecked: new Date(),
+      });
+
+    } catch (error) {
+      console.error('Badge eligibility check failed:', error);
+      return reply.code(500).send({
+        error: "Failed to check badge eligibility",
+        canCreate: false,
+      });
+    }
+  });
+
+  // Manage badge policies (Admin only)
+  app.post("/v1/badges/policies", {
+    preHandler: [requireAuth, requireRole(["HEAD_ADMIN"])],
+    schema: {
+      tags: ["badges"],
+      body: z.object({
+        collegeId: z.string().cuid(),
+        departmentId: z.string().optional(),
+        eventCreationRequired: z.number().int().min(1).default(8),
+        categoryDiversityMin: z.number().int().min(1).default(4),
+      }),
+      response: { 201: z.any() },
+    },
+  }, async (req, reply) => {
+    const data = req.body as any;
+
+    const policy = await prisma.badgePolicy.create({
+      data,
+    });
+
+    return reply.code(201).send({ policy });
+  });
+
+  // Get badge policy for a college
+  app.get("/v1/badges/policies/:collegeId", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      params: z.object({
+        collegeId: z.string().cuid(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { collegeId } = req.params as { collegeId: string };
+
+    const policy = await prisma.badgePolicy.findUnique({
+      where: { collegeId },
+    });
+
+    if (!policy) {
+      // Return default policy
+      return reply.send({
+        policy: {
+          collegeId,
+          eventCreationRequired: 8,
+          categoryDiversityMin: 4,
+          isActive: true,
+        }
+      });
+    }
+
+    return reply.send({ policy });
   });
 }

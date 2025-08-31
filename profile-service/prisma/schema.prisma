@@ -15,6 +15,7 @@ model Profile {
   name             String?  // Editable display name (separate from auth displayName)
   bio              String?
   skills           String[] // For students
+  expertise        String[] // For faculty
   linkedIn         String?
   github           String?  // For students
   twitter          String?  // For faculty
@@ -83,13 +84,18 @@ model BadgeDefinition {
   description String
   icon        String?
   color       String?
-  category    String?
-  rarity      String
+  category    String?  // LEADERSHIP, TECHNICAL, COMMUNITY, RESEARCH, PRESENTATION, COLLABORATION, INNOVATION, IMPACT
+  rarity      String   // COMMON, RARE, EPIC, LEGENDARY
   criteria    String?
+  points      Int      @default(10)
+  isActive    Boolean  @default(true)
+  collegeId   String?  // null = global badge, otherwise college-specific
   createdAt   DateTime @default(now())
   createdBy   String?
 
   awards      StudentBadge[]
+
+  @@unique([name, collegeId])
 }
 
 // Awarded badges to students
@@ -112,4 +118,32 @@ model StudentBadge {
   @@index([badgeId])
   @@index([awardedBy])
   @@index([awardedAt])
+  @@unique([badgeId, studentId]) // One badge per user
+}
+
+// Badge policies for event creation eligibility
+model BadgePolicy {
+  id                    String  @id @default(cuid())
+  collegeId             String  @unique
+  departmentId          String?
+  eventCreationRequired Int     @default(8) // badges required for event creation
+  categoryDiversityMin  Int     @default(4) // minimum categories required
+  isActive              Boolean @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("badge_policies")
+}
+
+// Cache for badge eligibility to avoid repeated calculations
+model BadgeEligibilityCache {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  canCreate   Boolean  @default(false)
+  badgeCount  Int      @default(0)
+  categories  String[] // categories covered
+  lastChecked DateTime @default(now())
+  expiresAt   DateTime
+
+  @@map("badge_eligibility_cache")
 }
