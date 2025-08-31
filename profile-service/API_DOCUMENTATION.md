@@ -56,6 +56,7 @@ Get current user's profile with all related data.
     "name": "John Doe",
     "bio": "Software Developer passionate about AI",
     "skills": ["JavaScript", "Python", "React"],
+    "expertise": ["Machine Learning", "Web Development"],
     "linkedIn": "https://linkedin.com/in/johndoe",
     "github": "https://github.com/johndoe",
     "twitter": "https://twitter.com/johndoe",
@@ -79,19 +80,40 @@ Create or update current user's profile.
 **Request Body:**
 ```json
 {
+  "displayName": "John Smith",
+  "avatarUrl": "https://example.com/avatar.jpg",
+  "year": 3,
+  "department": "Computer Science",
   "name": "John Doe",
   "bio": "Updated bio",
   "skills": ["JavaScript", "Python", "React", "Node.js"],
+  "expertise": ["Machine Learning", "Web Development"],
   "linkedIn": "https://linkedin.com/in/johndoe",
   "github": "https://github.com/johndoe",
   "twitter": "https://twitter.com/johndoe",
   "resumeUrl": "https://example.com/resume.pdf",
-  "avatar": "https://example.com/avatar.jpg",
   "contactInfo": "Available for freelance work",
   "phoneNumber": "+1234567890",
   "alternateEmail": "john.alt@email.com"
 }
 ```
+
+**Field Descriptions:**
+- **User Model Fields** (updated via Auth Service):
+  - `displayName`: User's display name (1-100 characters)
+  - `avatarUrl`: Profile picture URL
+  - `year`: Academic year for students (1-6)
+  - `department`: Department name
+- **Profile Model Fields** (stored in Profile Service):
+  - `name`: Editable display name separate from auth displayName
+  - `bio`: User biography (max 1000 characters)
+  - `skills`: Array of skills for students
+  - `expertise`: Array of expertise areas for faculty
+  - `linkedIn`, `github`, `twitter`: Social media URLs
+  - `resumeUrl`: Resume/CV URL for students
+  - `contactInfo`: Contact information (max 500 characters)
+  - `phoneNumber`: Phone number (max 20 characters)
+  - `alternateEmail`: Alternative email address
 
 **Response:**
 ```json
@@ -163,7 +185,7 @@ Get current user's personal projects.
 }
 ```
 
-#### POST /v1/profiles/me/projects
+#### POST /v1/profile/projects
 Create a new personal project.
 
 **Authentication:** Required
@@ -192,7 +214,7 @@ Create a new personal project.
 }
 ```
 
-#### PUT /v1/profiles/me/projects/:id
+#### PUT /v1/profile/projects/:id
 Update a personal project.
 
 **Authentication:** Required (must own the project)
@@ -208,7 +230,7 @@ Update a personal project.
 }
 ```
 
-#### DELETE /v1/profiles/me/projects/:id
+#### DELETE /v1/profile/projects/:id
 Delete a personal project.
 
 **Authentication:** Required (must own the project)
@@ -220,6 +242,32 @@ Delete a personal project.
 ```json
 {
   "success": true
+}
+```
+
+#### GET /v1/profile/projects/:userId
+Get personal projects for a specific user.
+
+**Authentication:** Required
+
+**Parameters:**
+- `userId` (string): Target user ID
+
+**Response:**
+```json
+{
+  "projects": [
+    {
+      "id": "project_id",
+      "userId": "user_id",
+      "title": "E-commerce Platform",
+      "description": "Full-stack e-commerce solution",
+      "github": "https://github.com/johndoe/ecommerce",
+      "demoLink": "https://myecommerce.com",
+      "image": "https://example.com/project-image.jpg",
+      "createdAt": "2023-01-15T10:30:00.000Z"
+    }
+  ]
 }
 ```
 
@@ -249,7 +297,7 @@ Get current user's publications.
 }
 ```
 
-#### POST /v1/profiles/me/publications
+#### POST /v1/profile/publications
 Create a new publication.
 
 **Authentication:** Required
@@ -264,17 +312,41 @@ Create a new publication.
 }
 ```
 
-#### PUT /v1/profiles/me/publications/:id
+#### PUT /v1/profile/publications/:id
 Update a publication.
 
 **Authentication:** Required (must own the publication)
 **Roles:** FACULTY, HEAD_ADMIN
 
-#### DELETE /v1/profiles/me/publications/:id
+#### DELETE /v1/profile/publications/:id
 Delete a publication.
 
 **Authentication:** Required (must own the publication)
 **Roles:** FACULTY, HEAD_ADMIN
+
+#### GET /v1/profile/publications/:userId
+Get publications for a specific user.
+
+**Authentication:** Required
+
+**Parameters:**
+- `userId` (string): Target user ID
+
+**Response:**
+```json
+{
+  "publications": [
+    {
+      "id": "pub_id",
+      "userId": "user_id",
+      "title": "Machine Learning in Healthcare",
+      "year": 2023,
+      "link": "https://journal.com/article",
+      "createdAt": "2023-06-15T10:30:00.000Z"
+    }
+  ]
+}
+```
 
 ---
 
@@ -331,10 +403,10 @@ Delete an experience.
 
 ### 6. Badge System
 
-#### GET /v1/badge-definitions
+#### GET /v1/badges/definitions
 Get all badge definitions.
 
-**Authentication:** None required (public endpoint)
+**Authentication:** Required
 
 **Response:**
 ```json
@@ -354,7 +426,7 @@ Get all badge definitions.
 }
 ```
 
-#### POST /v1/badge-definitions
+#### POST /v1/badges/definitions
 Create a new badge definition.
 
 **Authentication:** Required
@@ -372,7 +444,39 @@ Create a new badge definition.
 }
 ```
 
-#### POST /v1/badges/award
+#### GET /v1/badges/recent
+Get recent badge awards (for faculty/admin).
+
+**Authentication:** Required
+**Roles:** FACULTY, DEPT_ADMIN, HEAD_ADMIN
+
+**Query Parameters:**
+- `limit` (optional): Number of results (default: 20)
+
+**Response:**
+```json
+{
+  "awards": [
+    {
+      "id": "award_id",
+      "studentId": "user_id",
+      "studentName": "John Doe",
+      "collegeMemberId": "CS2024001",
+      "badgeId": "badge_def_id",
+      "awardedBy": "faculty_id",
+      "reason": "Outstanding project work",
+      "awardedAt": "2023-11-15T10:30:00.000Z",
+      "badge": {
+        "name": "Innovation Award",
+        "category": "Innovation",
+        "rarity": "EPIC"
+      }
+    }
+  ]
+}
+```
+
+#### POST /v1/badges/awards
 Award a badge to a user.
 
 **Authentication:** Required
@@ -386,6 +490,23 @@ Award a badge to a user.
   "reason": "Excellent performance in hackathon"
 }
 ```
+
+#### GET /v1/badges/export
+Export badge awards as CSV.
+
+**Authentication:** Required
+**Roles:** DEPT_ADMIN, HEAD_ADMIN
+
+**Response:** CSV file download with headers:
+- College Member ID
+- Student Name
+- Department
+- Badge Name
+- Badge Category
+- Badge Rarity
+- Awarded Date
+- Awarded By
+- Reason
 
 **Response:**
 ```json
