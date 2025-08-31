@@ -270,6 +270,11 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       displayName: user.displayName,
       tokenVersion: user.tokenVersion,
+      profile: {
+        collegeId: user.collegeId,
+        department: user.department,
+        year: user.year,
+      },
     });
 
     await issueRefreshTokenCookie(user.id, reply);
@@ -349,6 +354,11 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       displayName: user.displayName,
       tokenVersion: user.tokenVersion,
+      profile: {
+        collegeId: user.collegeId,
+        department: user.department,
+        year: user.year,
+      },
     });
 
     await issueRefreshTokenCookie(user.id, reply);
@@ -411,6 +421,11 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       displayName: user.displayName,
       tokenVersion: user.tokenVersion,
+      profile: {
+        collegeId: user.collegeId,
+        department: user.department,
+        year: user.year,
+      },
     });
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
@@ -475,6 +490,11 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       displayName: user.displayName,
       tokenVersion: user.tokenVersion,
+      profile: {
+        collegeId: user.collegeId,
+        department: user.department,
+        year: user.year,
+      },
     });
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
@@ -515,6 +535,11 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       displayName: user.displayName,
       tokenVersion: user.tokenVersion,
+      profile: {
+        collegeId: user.collegeId,
+        department: user.department,
+        year: user.year,
+      },
     });
 
     return reply.send({
@@ -728,6 +753,11 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       displayName: user.displayName,
       tokenVersion: user.tokenVersion,
+      profile: {
+        collegeId: user.collegeId,
+        department: user.department,
+        year: user.year,
+      },
     });
     await issueRefreshTokenCookie(user.id, reply);
 
@@ -826,12 +856,15 @@ export async function authRoutes(app: FastifyInstance) {
     schema: {
       tags: ["users"],
       params: z.object({ userId: z.string().cuid() }),
-      body: z.object({ displayName: z.string().min(1).max(100) }),
+      body: z.object({ 
+        displayName: z.string().min(1).max(100).optional(),
+        avatarUrl: z.string().url().optional()
+      }),
       response: { 200: z.any(), 404: errorResponseSchema },
     },
   }, async (req, reply) => {
     const { userId } = req.params as { userId: string };
-    const { displayName } = req.body as { displayName: string };
+    const { displayName, avatarUrl } = req.body as { displayName?: string; avatarUrl?: string };
     
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -841,9 +874,14 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(404).send({ message: "User not found" });
     }
 
+    // Build update data object
+    const updateData: any = {};
+    if (displayName !== undefined) updateData.displayName = displayName;
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { displayName },
+      data: updateData,
       select: {
         id: true,
         displayName: true,

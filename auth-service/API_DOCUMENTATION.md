@@ -245,6 +245,51 @@ Exchanges OAuth provider tokens for application tokens.
 - `google`
 - `github`
 
+## User Management APIs
+
+### 11. Update User Profile
+**PUT** `/v1/users/:userId`
+
+Updates user profile information including displayName, avatarUrl, year, and department.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body:**
+```json
+{
+  "displayName": "John Smith",
+  "avatarUrl": "https://example.com/avatar.jpg",
+  "year": 3,
+  "department": "Computer Science"
+}
+```
+
+**Response (200):**
+```json
+{
+  "id": "clxxxxx",
+  "email": "john.doe@example.com",
+  "displayName": "John Smith",
+  "avatarUrl": "https://example.com/avatar.jpg",
+  "roles": ["STUDENT"],
+  "collegeId": "clxxxxx",
+  "department": "Computer Science",
+  "year": 3,
+  "collegeMemberId": "CS2024001",
+  "updatedAt": "2024-01-15T10:30:00Z"
+}
+```
+
+**Validation Rules:**
+- Only the user themselves or admins can update user profiles
+- Year must be between 1-6 for students
+- Department must exist in the user's college
+- displayName must be 1-100 characters
+- avatarUrl must be a valid URL
+
 ## College Management APIs
 
 ### 1. List Colleges
@@ -515,6 +560,43 @@ All endpoints may return the following error responses:
 - Rate limiting applied to sensitive endpoints
 - CORS configured for frontend domains
 
+## JWT Token Structure
+
+### Access Token Claims
+```json
+{
+  "sub": "user_id",
+  "email": "user@example.com",
+  "displayName": "User Name",
+  "roles": ["STUDENT"],
+  "collegeId": "college_id",
+  "department": "Computer Science",
+  "year": 2024,
+  "collegeMemberId": "CS2024001",
+  "tokenVersion": 1,
+  "iss": "nexus-auth",
+  "aud": "nexus",
+  "iat": 1640995200,
+  "exp": 1640998800
+}
+```
+
+### Token Validation
+- **Algorithm**: RS256
+- **Public Key**: Available at `/.well-known/jwks.json`
+- **Expiry**: 1 hour for access tokens
+- **Refresh**: 7 days for refresh tokens
+
+## Rate Limiting
+
+| Endpoint | Rate Limit | Window |
+|----------|------------|--------|
+| `/v1/auth/login` | 5 requests | 15 minutes |
+| `/v1/auth/register` | 3 requests | 15 minutes |
+| `/v1/auth/forgot-password` | 3 requests | 15 minutes |
+| `/v1/auth/resend-verification` | 3 requests | 15 minutes |
+| All other endpoints | 100 requests | 15 minutes |
+
 ## Development Notes
 
 ### TypeScript Type Issues
@@ -523,28 +605,46 @@ When working with Prisma nullable fields and function parameters, be aware of ty
 
 **Issue**: Prisma nullable fields (`String?`) return `string | null`, but functions expecting optional parameters use `string | undefined`.
 
-**Example Problem**:
-```typescript
-// Prisma schema: collegeId String?
-// Function signature: canCreateRole(userRoles: string[], targetRole: string, userCollegeId?: string, targetCollegeId?: string)
-
-// This causes TypeScript error:
-canCreateRole(adminUser.roles, data.roles[0], adminUser.collegeId, data.collegeId)
-// Error: Argument of type 'string | null' is not assignable to parameter of type 'string | undefined'
-```
-
 **Solution**: Use nullish coalescing to convert `null` to `undefined`:
 ```typescript
 canCreateRole(adminUser.roles, data.roles[0], adminUser.collegeId ?? undefined, data.collegeId)
 ```
 
-This pattern applies to any Prisma nullable field being passed to functions expecting optional parameters.
+### Email Configuration
+
+For development, if `SMTP_HOST` is not configured, the service uses Ethereal Email:
+- Test emails are captured and viewable via debug URLs
+- Response includes `debugPreviewUrl` for easy email testing
+- Production should use real SMTP configuration
 
 ## Development Setup
 
-1. Set environment variables in `.env`
-2. Run database migrations: `npm run db:migrate`
-3. Generate Prisma client: `npx prisma generate`
-4. Start server: `npm run dev`
+1. **Environment Setup**
+```bash
+cp .env.example .env
+# Configure DATABASE_URL, JWT keys, and optional SMTP
+```
 
-Server runs on `http://localhost:4001` with Swagger docs at `/docs`.
+2. **Generate RSA Keys**
+```bash
+npx tsx scripts/generate-keys.ts
+# Copy output to .env AUTH_JWT_* variables
+```
+
+3. **Database Setup**
+```bash
+npm install
+npx prisma generate
+npx prisma migrate dev --name init
+```
+
+4. **Start Server**
+```bash
+npm run dev
+```
+
+**Service URLs:**
+- API: http://localhost:4001
+- Swagger Documentation: http://localhost:4001/docs
+- JWKS Endpoint: http://localhost:4001/.well-known/jwks.json
+- Health Check: http://localhost:4001/health
