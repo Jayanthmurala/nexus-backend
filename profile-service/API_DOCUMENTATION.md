@@ -56,7 +56,10 @@ Get current user's profile with all related data.
     "name": "John Doe",
     "bio": "Software Developer passionate about AI",
     "skills": ["JavaScript", "Python", "React"],
+<<<<<<< HEAD
     "expertise": ["Machine Learning", "Web Development"],
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
     "linkedIn": "https://linkedin.com/in/johndoe",
     "github": "https://github.com/johndoe",
     "twitter": "https://twitter.com/johndoe",
@@ -80,6 +83,7 @@ Create or update current user's profile.
 **Request Body:**
 ```json
 {
+<<<<<<< HEAD
   "displayName": "John Smith",
   "avatarUrl": "https://example.com/avatar.jpg",
   "year": 3,
@@ -88,16 +92,26 @@ Create or update current user's profile.
   "bio": "Updated bio",
   "skills": ["JavaScript", "Python", "React", "Node.js"],
   "expertise": ["Machine Learning", "Web Development"],
+=======
+  "name": "John Doe",
+  "bio": "Updated bio",
+  "skills": ["JavaScript", "Python", "React", "Node.js"],
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   "linkedIn": "https://linkedin.com/in/johndoe",
   "github": "https://github.com/johndoe",
   "twitter": "https://twitter.com/johndoe",
   "resumeUrl": "https://example.com/resume.pdf",
+<<<<<<< HEAD
+=======
+  "avatar": "https://example.com/avatar.jpg",
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   "contactInfo": "Available for freelance work",
   "phoneNumber": "+1234567890",
   "alternateEmail": "john.alt@email.com"
 }
 ```
 
+<<<<<<< HEAD
 **Field Descriptions:**
 - **User Model Fields** (updated via Auth Service):
   - `displayName`: User's display name (1-100 characters)
@@ -115,6 +129,8 @@ Create or update current user's profile.
   - `phoneNumber`: Phone number (max 20 characters)
   - `alternateEmail`: Alternative email address
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 **Response:**
 ```json
 {
@@ -185,7 +201,11 @@ Get current user's personal projects.
 }
 ```
 
+<<<<<<< HEAD
 #### POST /v1/profile/projects
+=======
+#### POST /v1/profiles/me/projects
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Create a new personal project.
 
 **Authentication:** Required
@@ -214,7 +234,11 @@ Create a new personal project.
 }
 ```
 
+<<<<<<< HEAD
 #### PUT /v1/profile/projects/:id
+=======
+#### PUT /v1/profiles/me/projects/:id
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Update a personal project.
 
 **Authentication:** Required (must own the project)
@@ -230,7 +254,11 @@ Update a personal project.
 }
 ```
 
+<<<<<<< HEAD
 #### DELETE /v1/profile/projects/:id
+=======
+#### DELETE /v1/profiles/me/projects/:id
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Delete a personal project.
 
 **Authentication:** Required (must own the project)
@@ -245,6 +273,7 @@ Delete a personal project.
 }
 ```
 
+<<<<<<< HEAD
 #### GET /v1/profile/projects/:userId
 Get personal projects for a specific user.
 
@@ -271,6 +300,8 @@ Get personal projects for a specific user.
 }
 ```
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 ---
 
 ### 4. Publications (Faculty Only)
@@ -297,7 +328,11 @@ Get current user's publications.
 }
 ```
 
+<<<<<<< HEAD
 #### POST /v1/profile/publications
+=======
+#### POST /v1/profiles/me/publications
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Create a new publication.
 
 **Authentication:** Required
@@ -312,18 +347,27 @@ Create a new publication.
 }
 ```
 
+<<<<<<< HEAD
 #### PUT /v1/profile/publications/:id
+=======
+#### PUT /v1/profiles/me/publications/:id
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Update a publication.
 
 **Authentication:** Required (must own the publication)
 **Roles:** FACULTY, HEAD_ADMIN
 
+<<<<<<< HEAD
 #### DELETE /v1/profile/publications/:id
+=======
+#### DELETE /v1/profiles/me/publications/:id
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Delete a publication.
 
 **Authentication:** Required (must own the publication)
 **Roles:** FACULTY, HEAD_ADMIN
 
+<<<<<<< HEAD
 #### GET /v1/profile/publications/:userId
 Get publications for a specific user.
 
@@ -348,6 +392,8 @@ Get publications for a specific user.
 }
 ```
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 ---
 
 ### 5. Experience Management
@@ -403,10 +449,17 @@ Delete an experience.
 
 ### 6. Badge System
 
+<<<<<<< HEAD
 #### GET /v1/badges/definitions
 Get all badge definitions.
 
 **Authentication:** Required
+=======
+#### GET /v1/badge-definitions
+Get all badge definitions.
+
+**Authentication:** None required (public endpoint)
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 
 **Response:**
 ```json
@@ -426,7 +479,11 @@ Get all badge definitions.
 }
 ```
 
+<<<<<<< HEAD
 #### POST /v1/badges/definitions
+=======
+#### POST /v1/badge-definitions
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Create a new badge definition.
 
 **Authentication:** Required
@@ -444,6 +501,7 @@ Create a new badge definition.
 }
 ```
 
+<<<<<<< HEAD
 #### GET /v1/badges/recent
 Get recent badge awards (for faculty/admin).
 
@@ -477,6 +535,9 @@ Get recent badge awards (for faculty/admin).
 ```
 
 #### POST /v1/badges/awards
+=======
+#### POST /v1/badges/award
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 Award a badge to a user.
 
 **Authentication:** Required
@@ -491,6 +552,7 @@ Award a badge to a user.
 }
 ```
 
+<<<<<<< HEAD
 #### GET /v1/badges/export
 Export badge awards as CSV.
 
@@ -508,6 +570,8 @@ Export badge awards as CSV.
 - Awarded By
 - Reason
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 **Response:**
 ```json
 {

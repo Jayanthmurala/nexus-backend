@@ -3,6 +3,7 @@ import { z } from "zod";
 import axios from "axios";
 import { prisma } from "../db";
 import { requireAuth, requireRole } from "../middleware/auth";
+<<<<<<< HEAD
 import { errorResponseSchema, messageResponseSchema } from "../schemas/profile.schemas";
 
 // Validation schemas
@@ -14,6 +15,13 @@ const updateProfileSchema = z.object({
   // User model fields that need to be updated via auth service
   year: z.number().int().min(1).max(6).optional(),
   department: z.string().max(100).optional(),
+=======
+
+// Validation schemas
+const updateProfileSchema = z.object({
+  // User model fields (only displayName is editable)
+  displayName: z.string().min(1).max(100).optional(),
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   
   // Profile model fields (all editable)
   name: z.string().min(1).max(100).optional(),
@@ -24,9 +32,18 @@ const updateProfileSchema = z.object({
   github: z.string().url().optional().or(z.literal("")),
   twitter: z.string().url().optional().or(z.literal("")),
   resumeUrl: z.string().url().optional().or(z.literal("")),
+<<<<<<< HEAD
   contactInfo: z.string().max(500).optional(),
   phoneNumber: z.string().max(20).optional(),
   alternateEmail: z.string().email().optional(),
+=======
+  avatar: z.string().url().optional().or(z.literal("")),
+  contactInfo: z.string().max(500).optional(),
+  phoneNumber: z.string().max(20).optional(),
+  alternateEmail: z.string().email().optional(),
+  year: z.number().int().min(1).max(6).optional(),
+  department: z.string().max(100).optional(),
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 });
 
 const createProfileSchema = z.object({
@@ -37,6 +54,10 @@ const createProfileSchema = z.object({
   github: z.string().url().optional().or(z.literal("")),
   twitter: z.string().url().optional().or(z.literal("")),
   resumeUrl: z.string().url().optional().or(z.literal("")),
+<<<<<<< HEAD
+=======
+  avatar: z.string().url().optional().or(z.literal("")),
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   contactInfo: z.string().max(500).optional(),
   phoneNumber: z.string().max(20).optional(),
   alternateEmail: z.string().email().optional(),
@@ -66,10 +87,16 @@ const publicationSchema = z.object({
 const badgeDefinitionSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
+<<<<<<< HEAD
   icon: z.string().optional(), // Allow any string (emojis or URLs)
   color: z.string().optional(),
   category: z.string().optional(),
   criteria: z.string().optional(), // Add missing criteria field
+=======
+  icon: z.string().url().optional(),
+  color: z.string().optional(),
+  category: z.string().optional(),
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).default("COMMON"),
 });
 
@@ -77,9 +104,12 @@ const awardBadgeSchema = z.object({
   badgeDefinitionId: z.string().cuid(),
   userId: z.string().cuid(),
   reason: z.string().min(1, "Reason is required"),
+<<<<<<< HEAD
   projectId: z.string().cuid().optional(),
   eventId: z.string().cuid().optional(),
   awardedByName: z.string().optional(),
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 });
 
 export default async function profileRoutes(app: FastifyInstance) {
@@ -247,6 +277,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     const userId = req.user!.sub;
 
     // Separate user model fields from profile model fields
+<<<<<<< HEAD
     const { displayName, avatarUrl, year, department, ...profileData } = data;
 
     // Update user model fields in auth service if provided
@@ -261,6 +292,16 @@ export default async function profileRoutes(app: FastifyInstance) {
         
         await axios.put(`${authServiceUrl}/v1/users/${userId}`, 
           updateData,
+=======
+    const { displayName, ...profileData } = data;
+
+    // Update displayName in auth service if provided
+    if (displayName) {
+      try {
+        const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+        await axios.put(`${authServiceUrl}/v1/users/${userId}`, 
+          { displayName },
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
           {
             headers: {
               'Authorization': req.headers.authorization || '',
@@ -269,8 +310,13 @@ export default async function profileRoutes(app: FastifyInstance) {
           }
         );
       } catch (error) {
+<<<<<<< HEAD
         console.error('Failed to update user data in auth service:', error);
         return reply.code(500).send({ message: "Failed to update user data" });
+=======
+        console.error('Failed to update displayName in auth service:', error);
+        return reply.code(500).send({ message: "Failed to update display name" });
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
       }
     }
 
@@ -823,14 +869,21 @@ export default async function profileRoutes(app: FastifyInstance) {
   app.delete("/v1/profile/experiences/:id", {
     preHandler: requireAuth,
     schema: {
+<<<<<<< HEAD
       tags: ["profiles"],
       params: z.object({ id: z.string().cuid() }),
       response: { 200: z.any(), 404: errorResponseSchema },
+=======
+      tags: ["experiences"],
+      params: z.object({ id: z.string().cuid() }),
+      response: { 200: z.any() },
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
     },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const userId = req.user!.sub;
 
+<<<<<<< HEAD
     // Check if experience exists and belongs to user
     const experience = await prisma.experience.findUnique({
       where: { id },
@@ -839,6 +892,18 @@ export default async function profileRoutes(app: FastifyInstance) {
 
     if (!experience || experience.profile.userId !== userId) {
       return reply.code(404).send({ message: "Experience not found" });
+=======
+    // Verify ownership through profile
+    const existingExperience = await prisma.experience.findFirst({
+      where: { 
+        id,
+        profile: { userId }
+      },
+    });
+
+    if (!existingExperience) {
+      return reply.code(404).send({ message: "Experience not found or access denied" });
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
     }
 
     await prisma.experience.delete({
@@ -848,6 +913,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     return reply.send({ message: "Experience deleted successfully" });
   });
 
+<<<<<<< HEAD
   // Skills CRUD endpoints
   
   // Protected: Get my skills
@@ -983,6 +1049,8 @@ export default async function profileRoutes(app: FastifyInstance) {
     return reply.send({ skills: updatedProfile.skills });
   });
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   // Protected: Create badge definition (Faculty/Admin only)
   app.post("/v1/badge-definitions", {
     preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
@@ -993,6 +1061,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     },
   }, async (req, reply) => {
     const data = req.body as z.infer<typeof badgeDefinitionSchema>;
+<<<<<<< HEAD
     
     console.log('Badge creation request body:', JSON.stringify(req.body, null, 2));
     console.log('Validated data:', JSON.stringify(data, null, 2));
@@ -1026,6 +1095,16 @@ export default async function profileRoutes(app: FastifyInstance) {
     });
 
     console.log('Created badge definition:', JSON.stringify(badgeDefinition, null, 2));
+=======
+
+    const badgeDefinition = await prisma.badgeDefinition.create({
+      data: {
+        ...data,
+        createdBy: req.user!.sub,
+      },
+    });
+
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
     return reply.code(201).send({ badgeDefinition });
   });
 
@@ -1039,10 +1118,13 @@ export default async function profileRoutes(app: FastifyInstance) {
     },
   }, async (req, reply) => {
     const data = req.body as z.infer<typeof awardBadgeSchema>;
+<<<<<<< HEAD
     
     console.log('Badge award request body:', JSON.stringify(req.body, null, 2));
     console.log('Validated data:', JSON.stringify(data, null, 2));
     
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
     // Verify the target user exists in auth service
     const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
     try {
@@ -1086,9 +1168,12 @@ export default async function profileRoutes(app: FastifyInstance) {
         badgeId: data.badgeDefinitionId,
         awardedBy: req.user!.sub,
         reason: data.reason,
+<<<<<<< HEAD
         projectId: data.projectId,
         eventId: data.eventId,
         awardedByName: data.awardedByName,
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
       },
       include: {
         badge: true,
@@ -1098,6 +1183,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     return reply.code(201).send({ badge });
   });
 
+<<<<<<< HEAD
   // Protected: Export badge awards data (Faculty/Admin only)
   app.get("/v1/badges/export", {
     preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
@@ -1167,6 +1253,8 @@ export default async function profileRoutes(app: FastifyInstance) {
     }
   });
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   // Public: List badge definitions
   app.get("/v1/badge-definitions", {
     schema: {
@@ -1204,6 +1292,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     reply.code(200).send({ badges });
   });
 
+<<<<<<< HEAD
   // Protected: Get recent badge awards (Faculty/Admin only)
   app.get("/v1/badges/recent", {
     preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
@@ -1211,10 +1300,20 @@ export default async function profileRoutes(app: FastifyInstance) {
       tags: ["badges"],
       querystring: z.object({
         limit: z.string().optional(),
+=======
+  // Get recent badge awards
+  app.get("/v1/badges/recent", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      querystring: z.object({
+        limit: z.coerce.number().min(1).max(100).default(10),
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
       }),
       response: { 200: z.any() },
     },
   }, async (req, reply) => {
+<<<<<<< HEAD
     const { limit } = req.query as { limit?: string };
     const limitNum = limit ? parseInt(limit, 10) : 10;
     const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
@@ -1259,6 +1358,19 @@ export default async function profileRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ awards: enhancedAwards });
+=======
+    const { limit } = req.query as { limit: number };
+
+    const awards = await prisma.studentBadge.findMany({
+      take: limit,
+      include: {
+        badge: true,
+      },
+      orderBy: { awardedAt: "desc" },
+    });
+
+    reply.code(200).send({ awards });
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   });
 
   // Get badge award counts
@@ -1283,6 +1395,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     }
 
     reply.code(200).send({ counts });
+<<<<<<< HEAD
   });
 
   // Check event creation eligibility for a user
@@ -1444,5 +1557,7 @@ export default async function profileRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ policy });
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   });
 }

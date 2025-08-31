@@ -15,7 +15,10 @@ model Profile {
   name             String?  // Editable display name (separate from auth displayName)
   bio              String?
   skills           String[] // For students
+<<<<<<< HEAD
   expertise        String[] // For faculty
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
   linkedIn         String?
   github           String?  // For students
   twitter          String?  // For faculty

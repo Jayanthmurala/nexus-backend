@@ -245,6 +245,7 @@ Exchanges OAuth provider tokens for application tokens.
 - `google`
 - `github`
 
+<<<<<<< HEAD
 ## User Management APIs
 
 ### 11. Update User Profile
@@ -290,6 +291,8 @@ Authorization: Bearer <access_token>
 - displayName must be 1-100 characters
 - avatarUrl must be a valid URL
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 ## College Management APIs
 
 ### 1. List Colleges
@@ -560,6 +563,7 @@ All endpoints may return the following error responses:
 - Rate limiting applied to sensitive endpoints
 - CORS configured for frontend domains
 
+<<<<<<< HEAD
 ## JWT Token Structure
 
 ### Access Token Claims
@@ -597,6 +601,8 @@ All endpoints may return the following error responses:
 | `/v1/auth/resend-verification` | 3 requests | 15 minutes |
 | All other endpoints | 100 requests | 15 minutes |
 
+=======
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 ## Development Notes
 
 ### TypeScript Type Issues
@@ -605,11 +611,25 @@ When working with Prisma nullable fields and function parameters, be aware of ty
 
 **Issue**: Prisma nullable fields (`String?`) return `string | null`, but functions expecting optional parameters use `string | undefined`.
 
+<<<<<<< HEAD
+=======
+**Example Problem**:
+```typescript
+// Prisma schema: collegeId String?
+// Function signature: canCreateRole(userRoles: string[], targetRole: string, userCollegeId?: string, targetCollegeId?: string)
+
+// This causes TypeScript error:
+canCreateRole(adminUser.roles, data.roles[0], adminUser.collegeId, data.collegeId)
+// Error: Argument of type 'string | null' is not assignable to parameter of type 'string | undefined'
+```
+
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
 **Solution**: Use nullish coalescing to convert `null` to `undefined`:
 ```typescript
 canCreateRole(adminUser.roles, data.roles[0], adminUser.collegeId ?? undefined, data.collegeId)
 ```
 
+<<<<<<< HEAD
 ### Email Configuration
 
 For development, if `SMTP_HOST` is not configured, the service uses Ethereal Email:
@@ -648,3 +668,15 @@ npm run dev
 - Swagger Documentation: http://localhost:4001/docs
 - JWKS Endpoint: http://localhost:4001/.well-known/jwks.json
 - Health Check: http://localhost:4001/health
+=======
+This pattern applies to any Prisma nullable field being passed to functions expecting optional parameters.
+
+## Development Setup
+
+1. Set environment variables in `.env`
+2. Run database migrations: `npm run db:migrate`
+3. Generate Prisma client: `npx prisma generate`
+4. Start server: `npm run dev`
+
+Server runs on `http://localhost:4001` with Swagger docs at `/docs`.
+>>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
