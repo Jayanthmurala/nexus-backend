@@ -2,7 +2,8 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth, requireRole } from "../middlewares/auth";
-import { getUserScope, getBadgeDefinitions, getMyBadgeAwards, getProfileByUserId } from "../clients/profile";
+import { getUserScope, getProfileByUserId } from "../clients/profile";
+import { getUserIdentity } from "../clients/auth";
 import type { AccessTokenPayload } from "../utils/jwt";
 import { env } from "../config/env";
 import { Prisma } from "@prisma/client";
@@ -15,7 +16,7 @@ const createEventSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
   startAt: z.string().datetime(),
-  endAt: z.string().datetime(),
+  endAt: z.string().datetime().optional(),
   type: EventType,
   mode: EventMode,
   location: z.string().optional(),
@@ -32,6 +33,9 @@ const moderateSchema = z.object({
   action: z.enum(["APPROVE", "REJECT", "ASSIGN"]),
   monitorId: z.string().optional(),
   monitorName: z.string().optional(),
+  mentorId: z.string().optional(),
+  mentorName: z.string().optional(),
+  rejectionReason: z.string().optional(),
 });
 
 const listQuerySchema = z.object({
@@ -51,22 +55,159 @@ function hasRole(payload: AccessTokenPayload, role: string) {
   return (payload.roles || []).includes(role);
 }
 
+async function createApprovalFlow(req: any, eventId: string, collegeId: string, department: string) {
+  try {
+    // Find department admin for assignment
+    const deptAdmin = await findDepartmentAdmin(req, collegeId, department);
+    
+    await prisma.eventApprovalFlow.create({
+      data: {
+        eventId,
+        assignedTo: deptAdmin?.id,
+        assignedToName: deptAdmin?.displayName,
+      },
+    });
+
+    // TODO: Send real-time notification to dept admin
+    console.log(`Event ${eventId} assigned to dept admin: ${deptAdmin?.displayName || 'None found'}`);
+  } catch (error) {
+    console.error('Failed to create approval flow:', error);
+  }
+}
+
+async function findDepartmentAdmin(req: any, collegeId: string, department: string) {
+  try {
+    const auth = req.headers["authorization"] as string | undefined;
+    if (!auth) return null;
+
+    // Call auth service to find dept admin for this college/department
+    const res = await fetch(`${env.AUTH_BASE_URL}/v1/users/search?role=DEPT_ADMIN&collegeId=${encodeURIComponent(collegeId)}&department=${encodeURIComponent(department)}`, {
+      headers: { Authorization: auth },
+    });
+
+    if (!res.ok) return null;
+    
+    const data = await res.json();
+    const admins = data?.users || [];
+    
+    // Return first available dept admin
+    return admins.length > 0 ? admins[0] : null;
+  } catch (error) {
+    console.error('Failed to find department admin:', error);
+    return null;
+  }
+}
+
+async function checkEscalation(eventId: string) {
+  const flow = await prisma.eventApprovalFlow.findUnique({
+    where: { eventId },
+    include: { event: true },
+  });
+
+  if (!flow || flow.isEscalated || flow.approvedAt || flow.rejectedAt) {
+    return; // Already processed or escalated
+  }
+
+  // Get escalation policy
+  const policy = await prisma.escalationPolicy.findUnique({
+    where: { collegeId: flow.event.collegeId },
+  });
+
+  const escalationHours = policy?.escalationDelayHours || 72;
+  const escalationTime = new Date(flow.submittedAt.getTime() + escalationHours * 60 * 60 * 1000);
+
+  if (new Date() >= escalationTime) {
+    // Time to escalate
+    await escalateEvent(eventId, policy);
+  }
+}
+
+async function escalateEvent(eventId: string, policy: any) {
+  try {
+    const flow = await prisma.eventApprovalFlow.findUnique({
+      where: { eventId },
+      include: { event: true },
+    });
+
+    if (!flow) return;
+
+    let escalatedTo = null;
+    let escalatedToName = null;
+
+    // Try backup approvers first
+    if (policy?.backupApprovers?.length > 0) {
+      // TODO: Check if backup approvers are available
+      escalatedTo = policy.backupApprovers[0];
+    }
+
+    // If no backup or auto-escalate to head admin
+    if (!escalatedTo && policy?.autoEscalateToHead) {
+      // Find head admin for this college
+      const headAdmin = await findHeadAdmin(flow.event.collegeId);
+      escalatedTo = headAdmin?.id;
+      escalatedToName = headAdmin?.displayName;
+    }
+
+    if (escalatedTo) {
+      await (prisma as any).eventApprovalFlow.update({
+        where: { eventId },
+        data: {
+          isEscalated: true,
+          escalatedAt: new Date(),
+          escalatedTo,
+          escalatedToName,
+          assignedTo: escalatedTo,
+          assignedToName: escalatedToName,
+        },
+      });
+
+      console.log(`Event ${eventId} escalated to: ${escalatedToName || escalatedTo}`);
+      // TODO: Send real-time notification
+    }
+  } catch (error) {
+    console.error('Failed to escalate event:', error);
+  }
+}
+
+async function findHeadAdmin(collegeId: string): Promise<{ id: string; displayName: string } | null> {
+  try {
+    // TODO: Implement auth service integration to find HEAD_ADMIN for the college
+    // This should call auth service API to find users with HEAD_ADMIN role for the collegeId
+    // For now, return null until auth service user search is implemented
+    console.warn(`findHeadAdmin not implemented for collegeId: ${collegeId}`);
+    return null;
+  } catch (error) {
+    console.error('Failed to find head admin:', error);
+    return null;
+  }
+}
+
 async function ensureStudentEligibility(req: any, payload: AccessTokenPayload) {
   if (!hasRole(payload, "STUDENT")) return { canCreate: true, missing: [] as string[] };
-  // Fetch badge definitions and my awards, match by name
-  const [defs, awards] = await Promise.all([
-    getBadgeDefinitions(req),
-    getMyBadgeAwards(req, payload),
-  ]);
-  const defById = new Map(defs.map((d) => [d.id, d]));
-  const myBadgeNames = new Set(
-    awards
-      .map((a) => defById.get(a.badgeId)?.name?.trim().toLowerCase())
-      .filter((v): v is string => !!v)
-  );
-  const required = env.EVENT_REQUIRED_BADGE_NAMES.map((n: string) => n.toLowerCase());
-  const missing = required.filter((r: string) => !myBadgeNames.has(r));
-  return { canCreate: missing.length === 0, missing };
+  
+  try {
+    // Use the new badge eligibility endpoint from profile service
+    const auth = req.headers["authorization"] as string | undefined;
+    if (!auth) throw new Error("Missing Authorization header");
+
+    const res = await fetch(`${env.PROFILE_BASE_URL}/v1/badges/eligibility/${encodeURIComponent(payload.sub)}`, {
+      headers: { Authorization: auth },
+    });
+
+    if (!res.ok) {
+      console.error(`Badge eligibility check failed: ${res.status}`);
+      return { canCreate: false, missing: ["Badge eligibility check failed"] };
+    }
+
+    const data = await res.json();
+    return { 
+      canCreate: data.canCreate || false, 
+      missing: data.canCreate ? [] : [`Need ${data.requiredBadges || 8} badges across ${data.requiredCategories || 4} categories`]
+    };
+  } catch (error) {
+    console.error('Badge eligibility check error:', error);
+    return { canCreate: false, missing: ["Badge eligibility check failed"] };
+  }
 }
 
 export default async function eventsRoutes(app: FastifyInstance) {
@@ -134,13 +275,13 @@ export default async function eventsRoutes(app: FastifyInstance) {
     const regSet = new Set(
       (
         await prisma.eventRegistration.findMany({
-          where: { userId: payload.sub, eventId: { in: items.map((i) => i.id) } },
+          where: { userId: payload.sub, eventId: { in: items.map((i: { id: any; }) => i.id) } },
           select: { eventId: true },
         })
-      ).map((r) => r.eventId)
+      ).map((r: { eventId: any; }) => r.eventId)
     );
 
-    const augmented = items.map((e) => ({
+    const augmented = items.map((e: { id: unknown; }) => ({
       ...e,
       registrationCount: (e as any)._count?.registrations ?? 0,
       isRegistered: regSet.has(e.id),
@@ -179,15 +320,25 @@ export default async function eventsRoutes(app: FastifyInstance) {
     schema: { tags: ["events"], body: createEventSchema, response: { 200: z.any() } },
   }, async (req: any, reply: any) => {
     const payload = await requireAuth(req);
-    const scope = await getUserScope(req, payload);
+    const identity = await getUserIdentity(req, payload.sub);
+    if (!identity) {
+      return reply.code(404).send({ message: "User not found" });
+    }
     const body = createEventSchema.parse((req as any).body);
 
     const startAt = new Date(body.startAt);
-    const endAt = new Date(body.endAt);
-    if (!(startAt instanceof Date) || !(endAt instanceof Date) || isNaN(startAt.getTime()) || isNaN(endAt.getTime())) {
-      return reply.code(400).send({ message: "Invalid startAt or endAt" });
+    if (!(startAt instanceof Date) || isNaN(startAt.getTime())) {
+      return reply.code(400).send({ message: "Invalid startAt" });
     }
-    if (endAt <= startAt) return reply.code(400).send({ message: "endAt must be after startAt" });
+    
+    let endAt = startAt; // Default to same day if not provided
+    if (body.endAt) {
+      endAt = new Date(body.endAt);
+      if (!(endAt instanceof Date) || isNaN(endAt.getTime())) {
+        return reply.code(400).send({ message: "Invalid endAt" });
+      }
+      if (endAt < startAt) return reply.code(400).send({ message: "endAt must be after or equal to startAt" });
+    }
 
     if (body.mode !== "ONSITE" && !body.meetingUrl) {
       return reply.code(400).send({ message: "meetingUrl is required for ONLINE/HYBRID" });
@@ -196,7 +347,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
       return reply.code(400).send({ message: "location is required for ONSITE/HYBRID" });
     }
 
-    const isStudent = hasRole(payload, "STUDENT");
+    const isStudent = identity.roles.includes("STUDENT");
     if (isStudent) {
       const { canCreate, missing } = await ensureStudentEligibility(req, payload);
       if (!canCreate) return reply.code(403).send({ message: "Missing required badges", missingBadges: missing });
@@ -206,10 +357,10 @@ export default async function eventsRoutes(app: FastifyInstance) {
 
     const created = await prisma.event.create({
       data: {
-        collegeId: scope.collegeId,
-        authorId: payload.sub,
-        authorName: payload.name || (payload as any).displayName || "",
-        authorRole: isStudent ? "STUDENT" : ((payload.roles || [])[0] || "UNKNOWN"),
+        collegeId: identity.collegeId,
+        authorId: identity.id,
+        authorName: identity.displayName,
+        authorRole: isStudent ? "STUDENT" : (identity.roles[0] || "UNKNOWN"),
         title: body.title,
         description: body.description,
         startAt,
@@ -225,6 +376,11 @@ export default async function eventsRoutes(app: FastifyInstance) {
         moderationStatus,
       },
     });
+
+    // Create approval flow for student events
+    if (isStudent) {
+      await createApprovalFlow(req, created.id, identity.collegeId, identity.department);
+    }
 
     return reply.send({ event: { ...created, registrationCount: 0, isRegistered: false } });
   });
@@ -260,7 +416,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
     if (body.endAt !== undefined) {
       const d = new Date(body.endAt); if (isNaN(d.getTime())) return reply.code(400).send({ message: "Invalid endAt" }); updateData.endAt = d;
     }
-    if (updateData.startAt && updateData.endAt && updateData.endAt <= updateData.startAt) return reply.code(400).send({ message: "endAt must be after startAt" });
+    if (updateData.startAt && updateData.endAt && updateData.endAt < updateData.startAt) return reply.code(400).send({ message: "endAt must be after or equal to startAt" });
     if (body.type !== undefined) updateData.type = body.type;
     if (body.mode !== undefined) updateData.mode = body.mode;
     if (body.location !== undefined) updateData.location = body.location;
@@ -316,31 +472,91 @@ export default async function eventsRoutes(app: FastifyInstance) {
     if (!ev) return reply.code(404).send({ message: "Not found" });
 
     if (body.action === "APPROVE") {
-      const updated = await prisma.event.update({ where: { id }, data: { moderationStatus: "APPROVED" } });
-      const [count, myReg] = await Promise.all([
-        prisma.eventRegistration.count({ where: { eventId: updated.id } }),
-        prisma.eventRegistration.findFirst({ where: { eventId: updated.id, userId: payload.sub } }),
-      ]);
-      return reply.send({ event: { ...updated, registrationCount: count, isRegistered: !!myReg } });
-    }
-    if (body.action === "REJECT") {
-      const updated = await prisma.event.update({ where: { id }, data: { moderationStatus: "REJECTED" } });
-      const [count, myReg] = await Promise.all([
-        prisma.eventRegistration.count({ where: { eventId: updated.id } }),
-        prisma.eventRegistration.findFirst({ where: { eventId: updated.id, userId: payload.sub } }),
-      ]);
-      return reply.send({ event: { ...updated, registrationCount: count, isRegistered: !!myReg } });
-    }
-    // ASSIGN
-    if (!body.monitorId) return reply.code(400).send({ message: "monitorId is required for ASSIGN" });
-    const updated = await prisma.event.update({ where: { id }, data: { monitorId: body.monitorId, monitorName: body.monitorName ?? null } });
-    const [count, myReg] = await Promise.all([
-      prisma.eventRegistration.count({ where: { eventId: updated.id } }),
-      prisma.eventRegistration.findFirst({ where: { eventId: updated.id, userId: payload.sub } }),
-    ]);
-    return reply.send({ event: { ...updated, registrationCount: count, isRegistered: !!myReg } });
-  });
+      // Update event status
+      const updated = await prisma.event.update({ 
+        where: { id }, 
+        data: { 
+          moderationStatus: "APPROVED",
+          monitorId: body.mentorId,
+          monitorName: body.mentorName,
+        } 
+      });
 
+      // Update approval flow
+      try {
+        await prisma.eventApprovalFlow.update({
+          where: { eventId: id },
+          data: {
+            approvedAt: new Date(),
+            approvedBy: payload.sub,
+            approvedByName: payload.displayName || "",
+            mentorAssigned: body.mentorId,
+            mentorName: body.mentorName,
+          },
+        });
+      } catch (error) {
+        console.error('Failed to update approval flow:', error);
+      }
+
+      const [count, myReg] = await Promise.all([
+        prisma.eventRegistration.count({ where: { eventId: updated.id } }),
+        prisma.eventRegistration.findFirst({ where: { eventId: updated.id, userId: payload.sub } }),
+      ]);
+      
+      // TODO: Send real-time notification to student and mentor
+      return reply.send({ event: { ...updated, registrationCount: count, isRegistered: !!myReg } });
+    }
+    
+    if (body.action === "REJECT") {
+      const updated = await prisma.event.update({ 
+        where: { id }, 
+        data: { moderationStatus: "REJECTED" } 
+      });
+
+      // Update approval flow
+      try {
+        await prisma.eventApprovalFlow.update({
+          where: { eventId: id },
+          data: {
+            rejectedAt: new Date(),
+            rejectedBy: payload.sub,
+            rejectedByName: payload.displayName || "",
+            rejectionReason: body.rejectionReason,
+          },
+        });
+      } catch (error) {
+        console.error('Failed to update approval flow:', error);
+      }
+
+      const [count, myReg] = await Promise.all([
+        prisma.eventRegistration.count({ where: { eventId: updated.id } }),
+        prisma.eventRegistration.findFirst({ where: { eventId: updated.id, userId: payload.sub } }),
+      ]);
+      
+      // TODO: Send real-time notification to student
+      return reply.send({ event: { ...updated, registrationCount: count, isRegistered: !!myReg } });
+    }
+
+    if (body.action === "ASSIGN") {
+      // Update approval flow assignment
+      try {
+        await prisma.eventApprovalFlow.update({
+          where: { eventId: id },
+          data: {
+            assignedTo: body.monitorId,
+            assignedToName: body.monitorName,
+          },
+        });
+      } catch (error) {
+        console.error('Failed to reassign approval:', error);
+      }
+
+      // TODO: Send real-time notification to new assignee
+      return reply.send({ success: true, message: "Event reassigned successfully" });
+    }
+
+    return reply.code(400).send({ message: "Invalid action" });
+  });
   // Register for event (any authenticated), capacity enforced, only on APPROVED events
   app.post("/v1/events/:id/register", {
     schema: { tags: ["events"], params: z.object({ id: z.string() }), response: { 200: z.any() } },
@@ -400,35 +616,43 @@ export default async function eventsRoutes(app: FastifyInstance) {
     if (!ev) return reply.code(404).send({ message: "Not found" });
 
     const regs = await prisma.eventRegistration.findMany({ where: { eventId: ev.id }, orderBy: { joinedAt: "asc" } });
-    const headers = ["userId", "department", "year", "collegeMemberId", "joinedAt", "linkedIn", "github", "twitter", "resumeUrl", "contactInfo"] as const;
+    const headers = ["studentName", "collegeMemberId", "department", "year"] as const;
 
-    const rows = await Promise.all(regs.map(async (r) => {
+    const rows = await Promise.all(regs.map(async (r: { userId: string; joinedAt: { toISOString: () => any; }; }) => {
       try {
-        const profile = await getProfileByUserId(req, r.userId);
+        // Use the enhanced profile endpoint that combines auth + profile data
+        const auth = req.headers["authorization"] as string | undefined;
+        const profileRes = await fetch(`${env.PROFILE_BASE_URL}/v1/profile/user/${encodeURIComponent(r.userId)}`, {
+          headers: { Authorization: auth || "" },
+        });
+        
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          const profile = profileData.profile;
+          return {
+            studentName: profile?.displayName ?? "Unknown",
+            collegeMemberId: profile?.collegeMemberId ?? "",
+            department: profile?.department ?? "",
+            year: profile?.year?.toString() ?? "",
+          } as const;
+        } else {
+          // Fallback to separate calls
+          const userIdentity = await getUserIdentity(req, r.userId);
+          const profile = await getProfileByUserId(req, r.userId);
+          return {
+            studentName: userIdentity?.displayName ?? "Unknown",
+            collegeMemberId: profile?.collegeMemberId ?? "",
+            department: userIdentity?.department ?? profile?.department ?? "",
+            year: profile?.year?.toString() ?? "",
+          } as const;
+        }
+      } catch (error) {
+        console.error(`Failed to get profile for user ${r.userId}:`, error);
         return {
-          userId: r.userId,
-          department: profile?.department ?? "",
-          year: profile?.year ?? "",
-          collegeMemberId: profile?.collegeMemberId ?? "",
-          joinedAt: r.joinedAt.toISOString(),
-          linkedIn: profile?.linkedIn ?? "",
-          github: profile?.github ?? "",
-          twitter: profile?.twitter ?? "",
-          resumeUrl: profile?.resumeUrl ?? "",
-          contactInfo: profile?.contactInfo ?? "",
-        } as const;
-      } catch {
-        return {
-          userId: r.userId,
+          studentName: "Unknown",
+          collegeMemberId: "",
           department: "",
           year: "",
-          collegeMemberId: "",
-          joinedAt: r.joinedAt.toISOString(),
-          linkedIn: "",
-          github: "",
-          twitter: "",
-          resumeUrl: "",
-          contactInfo: "",
         } as const;
       }
     }));
@@ -441,7 +665,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
     };
     const lines = [
       headers.join(","),
-      ...rows.map((row) => headers.map((h) => csvEscape((row as any)[h])).join(",")),
+      ...rows.map((row: any) => headers.map((h) => csvEscape((row as any)[h])).join(",")),
     ];
     const csv = "\uFEFF" + lines.join("\n");
 
@@ -488,12 +712,12 @@ export default async function eventsRoutes(app: FastifyInstance) {
     const regSet = new Set(
       (
         await prisma.eventRegistration.findMany({
-          where: { userId: payload.sub, eventId: { in: items.map((i) => i.id) } },
+          where: { userId: payload.sub, eventId: { in: items.map((i: { id: any; }) => i.id) } },
           select: { eventId: true },
         })
-      ).map((r) => r.eventId)
+      ).map((r: { eventId: any; }) => r.eventId)
     );
-    const augmented = items.map((e) => ({
+    const augmented = items.map((e: { id: unknown; }) => ({
       ...e,
       registrationCount: (e as any)._count?.registrations ?? 0,
       isRegistered: regSet.has(e.id),

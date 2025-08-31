@@ -17,11 +17,6 @@ export const env = {
   AUTH_JWT_ISSUER: process.env.AUTH_JWT_ISSUER ?? "nexus-auth",
   AUTH_JWT_AUDIENCE: process.env.AUTH_JWT_AUDIENCE ?? "nexus",
 
+  AUTH_BASE_URL: process.env.AUTH_BASE_URL ?? "http://localhost:4001",
   PROFILE_BASE_URL: process.env.PROFILE_BASE_URL ?? "http://localhost:4002",
-
-  // Optional: comma-separated badge names to require for student event creation
-  EVENT_REQUIRED_BADGE_NAMES: (process.env.EVENT_REQUIRED_BADGE_NAMES ?? "Team Player,Leadership,Innovation,Problem Solver,Research Excellence,Community Impact,Outstanding Presentation,Top Contributor")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean),
 };
