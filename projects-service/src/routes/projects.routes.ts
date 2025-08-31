@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from "../middlewares/auth";
 import { createProjectSchema, updateProjectSchema, applyProjectSchema, updateApplicationStatusSchema, createTaskSchema, updateTaskSchema, createAttachmentSchema } from "../schemas/projects";
 import { prisma } from "../db";
 import { getUserScope } from "../clients/profile";
+import { emitProjectUpdate, emitApplicationUpdate } from "../utils/websocket";
 import type { Prisma, $Enums } from "@prisma/client";
 
 export default async function projectsRoutes(app: FastifyInstance) {
@@ -59,8 +60,19 @@ export default async function projectsRoutes(app: FastifyInstance) {
       skip: (page - 1) * limit,
       take: limit,
     });
+    // Get accepted students count for all projects
+    const ids = projects.map((p: any) => p.id);
+    const acceptedCounts = await prisma.appliedProject.groupBy({
+      by: ['projectId'],
+      where: { projectId: { in: ids }, status: 'ACCEPTED' as $Enums.ApplicationStatus },
+      _count: { projectId: true },
+    });
+    const countsByProjectId: Record<string, number> = {};
+    for (const count of acceptedCounts) {
+      countsByProjectId[count.projectId] = count._count.projectId;
+    }
+
     if (isStudent && projects.length > 0) {
-      const ids = projects.map((p: any) => p.id);
       const myApps = await prisma.appliedProject.findMany({
         where: { projectId: { in: ids }, studentId: payload.sub },
         select: { projectId: true, status: true },
@@ -71,10 +83,66 @@ export default async function projectsRoutes(app: FastifyInstance) {
         ...p,
         hasApplied: !!statusByProjectId[p.id],
         myApplicationStatus: (statusByProjectId[p.id] ?? null),
+        acceptedStudentsCount: countsByProjectId[p.id] || 0,
       }));
       return reply.send({ projects: projectsOut, page, total });
     }
-    return reply.send({ projects, page, total });
+    
+    const projectsOut = projects.map((p: any) => ({
+      ...p,
+      acceptedStudentsCount: countsByProjectId[p.id] || 0,
+    }));
+    return reply.send({ projects: projectsOut, page, total });
+  });
+
+  // Get single project by ID
+  app.get("/v1/projects/:id", {
+    schema: {
+      tags: ["projects"],
+      params: z.object({ id: z.string() }),
+      response: { 200: z.any() },
+    },
+  }, async (req: any, reply: any) => {
+    const payload = await requireAuth(req);
+    const { id } = (req.params as any) as { id: string };
+    const { collegeId, department } = await getUserScope(req, payload);
+    const roles = (payload.roles || []) as string[];
+    const isStudent = roles.includes("STUDENT");
+
+    const project = await prisma.project.findFirst({
+      where: { id, collegeId, archivedAt: null },
+    });
+
+    if (!project) {
+      return reply.code(404).send({ message: "Project not found" });
+    }
+
+    // Check visibility for students
+    if (isStudent) {
+      if (project.moderationStatus !== "APPROVED") {
+        return reply.code(404).send({ message: "Project not found" });
+      }
+      if (!(project.visibleToAllDepts || project.departments.includes(department))) {
+        return reply.code(404).send({ message: "Project not found" });
+      }
+
+      // Add application status for students
+      const myApp = await prisma.appliedProject.findUnique({
+        where: { projectId_studentId: { projectId: id, studentId: payload.sub } },
+        select: { status: true },
+      });
+
+      return reply.send({
+        project: {
+          ...project,
+          hasApplied: !!myApp,
+          myApplicationStatus: myApp?.status ?? null,
+        },
+      });
+    }
+
+    // Faculty can see all projects in their college
+    return reply.send({ project });
   });
 
   // My projects (FACULTY)
@@ -88,7 +156,25 @@ export default async function projectsRoutes(app: FastifyInstance) {
       where: { authorId: payload.sub, collegeId, archivedAt: null },
       orderBy: { createdAt: "desc" },
     });
-    return reply.send({ projects });
+    
+    // Get accepted students count for all projects
+    const ids = projects.map((p: any) => p.id);
+    const acceptedCounts = await prisma.appliedProject.groupBy({
+      by: ['projectId'],
+      where: { projectId: { in: ids }, status: 'ACCEPTED' as $Enums.ApplicationStatus },
+      _count: { projectId: true },
+    });
+    const countsByProjectId: Record<string, number> = {};
+    for (const count of acceptedCounts) {
+      countsByProjectId[count.projectId] = count._count.projectId;
+    }
+    
+    const projectsOut = projects.map((p: any) => ({
+      ...p,
+      acceptedStudentsCount: countsByProjectId[p.id] || 0,
+    }));
+    
+    return reply.send({ projects: projectsOut });
   });
 
   // Create project (FACULTY)
@@ -102,10 +188,9 @@ export default async function projectsRoutes(app: FastifyInstance) {
     if (!body.visibleToAllDepts && (!body.departments || body.departments.length === 0)) {
       return reply.code(400).send({ message: "Specify at least one department when visibleToAllDepts=false" });
     }
-    const tokenName = (payload as any).name ?? (payload as any).displayName ?? null;
-    const tokenAvatar = (payload as any).picture ?? (payload as any).avatarUrl ?? null;
-    const authorName = tokenName ?? nameFromProfile ?? "";
-    const authorAvatar = tokenAvatar ?? avatarFromProfile ?? null;
+    // JWT-first approach for identity data
+    const authorName = payload.displayName ?? (payload as any).name ?? nameFromProfile ?? "";
+    const authorAvatar = (payload as any).avatarUrl ?? (payload as any).picture ?? avatarFromProfile ?? null;
     const created = await prisma.project.create({
       data: {
         collegeId,
@@ -127,6 +212,16 @@ export default async function projectsRoutes(app: FastifyInstance) {
         outcomes: body.outcomes ?? [],
       },
     });
+
+    // Emit real-time project update
+    emitProjectUpdate({
+      type: 'new-project',
+      project: created,
+      collegeId: created.collegeId,
+      departments: created.departments,
+      visibleToAllDepts: created.visibleToAllDepts,
+    });
+
     return reply.send({ project: created });
   });
 
@@ -189,12 +284,21 @@ export default async function projectsRoutes(app: FastifyInstance) {
       data: {
         projectId: id,
         studentId: payload.sub,
-        studentName: ((payload as any).name ?? (payload as any).displayName ?? nameFromProfile ?? ""),
+        studentName: (payload.displayName ?? (payload as any).name ?? nameFromProfile ?? ""),
         studentDepartment: department,
         status: "PENDING" as $Enums.ApplicationStatus,
         message: body.message ?? null,
       },
     });
+
+    // Emit application update to faculty
+    emitApplicationUpdate({
+      type: 'new-application',
+      application: created,
+      projectId: id,
+      collegeId: collegeId,
+    }, project.authorId);
+
     return reply.send({ application: created });
   });
 
@@ -300,7 +404,7 @@ export default async function projectsRoutes(app: FastifyInstance) {
         projectId: id,
         taskId: body.taskId ?? null,
         authorId: payload.sub,
-        authorName: ((payload as any).name ?? (payload as any).displayName ?? nameFromProfile ?? ""),
+        authorName: (payload.displayName ?? (payload as any).name ?? nameFromProfile ?? ""),
         body: body.body,
       },
     });

@@ -1,76 +1,86 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import axios from "axios";
 import { prisma } from "../db";
-import { verifyAccessToken } from "../utils/jwt";
+import { requireAuth, requireRole } from "../middleware/auth";
+import { errorResponseSchema, messageResponseSchema } from "../schemas/profile.schemas";
 
-const profileSchema = z.object({
-  collegeId: z.string(),
-  department: z.string(),
-  year: z.number().int().optional(),
+// Validation schemas
+const updateProfileSchema = z.object({
+  // User model fields (displayName and avatarUrl are editable)
+  displayName: z.string().min(1).max(100).optional(),
+  avatarUrl: z.string().url().optional().or(z.literal("")),
+  
+  // User model fields that need to be updated via auth service
+  year: z.number().int().min(1).max(6).optional(),
+  department: z.string().max(100).optional(),
+  
+  // Profile model fields (all editable)
+  name: z.string().min(1).max(100).optional(),
+  bio: z.string().max(1000).optional(),
   skills: z.array(z.string()).optional(),
   expertise: z.array(z.string()).optional(),
-  linkedIn: z.string().url().optional(),
-  github: z.string().url().optional(),
-  twitter: z.string().url().optional(),
-  resumeUrl: z.string().url().optional(),
-  bio: z.string().optional(),
-  avatar: z.string().url().optional(),
-  contactInfo: z.string().optional(),
-  collegeMemberId: z.string().optional(),
+  linkedIn: z.string().url().optional().or(z.literal("")),
+  github: z.string().url().optional().or(z.literal("")),
+  twitter: z.string().url().optional().or(z.literal("")),
+  resumeUrl: z.string().url().optional().or(z.literal("")),
+  contactInfo: z.string().max(500).optional(),
+  phoneNumber: z.string().max(20).optional(),
+  alternateEmail: z.string().email().optional(),
+});
+
+const createProfileSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  bio: z.string().max(1000).optional(),
+  skills: z.array(z.string()).optional(),
+  linkedIn: z.string().url().optional().or(z.literal("")),
+  github: z.string().url().optional().or(z.literal("")),
+  twitter: z.string().url().optional().or(z.literal("")),
+  resumeUrl: z.string().url().optional().or(z.literal("")),
+  contactInfo: z.string().max(500).optional(),
+  phoneNumber: z.string().max(20).optional(),
+  alternateEmail: z.string().email().optional(),
+});
+
+const personalProjectSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  github: z.string().url().optional().or(z.literal("")),
+  demoLink: z.string().url().optional().or(z.literal("")),
+  image: z.string().url().optional().or(z.literal("")),
+});
+
+const experienceSchema = z.object({
+  area: z.string().min(1), // AI, IoT, Machine Learning, etc.
+  level: z.enum(["Beginner", "Intermediate", "Advanced", "Expert"]),
+  yearsExp: z.number().min(0).max(50).optional(),
+  description: z.string().optional(),
 });
 
 const publicationSchema = z.object({
   title: z.string().min(1),
-  link: z.string().url().optional(),
-  year: z.number().int(),
+  year: z.number().min(1900).max(new Date().getFullYear()),
+  link: z.string().url().optional().or(z.literal("")),
 });
 
-const projectSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().min(1),
-  github: z.string().url().optional(),
-  demoLink: z.string().url().optional(),
-  image: z.string().url().optional(),
-});
-
-// Badges
 const badgeDefinitionSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
-  icon: z.string().optional(),
+  icon: z.string().optional(), // Allow any string (emojis or URLs)
   color: z.string().optional(),
   category: z.string().optional(),
-  rarity: z.enum(["common", "rare", "epic", "legendary"]),
-  criteria: z.string().optional(),
+  criteria: z.string().optional(), // Add missing criteria field
+  rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).default("COMMON"),
 });
 
 const awardBadgeSchema = z.object({
-  studentId: z.string().min(1),
-  badgeId: z.string().min(1),
-  reason: z.string().min(1),
-  projectId: z.string().optional(),
-  eventId: z.string().optional(),
+  badgeDefinitionId: z.string().cuid(),
+  userId: z.string().cuid(),
+  reason: z.string().min(1, "Reason is required"),
+  projectId: z.string().cuid().optional(),
+  eventId: z.string().cuid().optional(),
+  awardedByName: z.string().optional(),
 });
-
-async function requireAuth(req: any) {
-  const auth = req.headers["authorization"] as string | undefined;
-  if (!auth?.startsWith("Bearer ")) {
-    const err: any = new Error("Unauthorized");
-    err.statusCode = 401;
-    throw err;
-  }
-  const token = auth.slice("Bearer ".length);
-  return verifyAccessToken(token);
-}
-
-function requireRole(payload: { roles?: string[] }, allowed: string[]) {
-  const has = (payload.roles || []).some((r) => allowed.includes(r));
-  if (!has) {
-    const err: any = new Error("Forbidden");
-    err.statusCode = 403;
-    throw err;
-  }
-}
 
 export default async function profileRoutes(app: FastifyInstance) {
   // Public: List colleges (no auth required)
@@ -79,324 +89,1360 @@ export default async function profileRoutes(app: FastifyInstance) {
       tags: ["colleges"],
       response: { 200: z.any() },
     },
-  }, async (_req: any, reply: any) => {
-    const colleges = await prisma.college.findMany({ orderBy: { name: "asc" } });
-    return reply.send({ colleges });
-  });
-
-  // GET my profile
-  app.get("/v1/profile/me", {
-    schema: {
-      tags: ["profile"],
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    const profile = await prisma.profile.findUnique({ where: { userId: payload.sub } });
-    return reply.send({ profile });
-  });
-
-  // PUT upsert my profile
-  app.put("/v1/profile/me", {
-    schema: {
-      tags: ["profile"],
-      body: profileSchema,
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    const body = profileSchema.parse((req as any).body);
-    // Validate collegeId exists
-    const college = await prisma.college.findUnique({ where: { id: body.collegeId } });
-    if (!college) {
-      return reply.code(400).send({ message: "Invalid collegeId" });
+  }, async (_req, reply) => {
+    try {
+      // Forward request to auth-service
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      const response = await fetch(`${authServiceUrl}/v1/colleges`);
+      
+      if (!response.ok) {
+        return reply.code(response.status).send({ 
+          message: "Failed to fetch colleges from auth service" 
+        });
+      }
+      
+      const data = await response.json();
+      return reply.send(data);
+    } catch (error) {
+      return reply.code(500).send({ 
+        message: "Internal server error while fetching colleges" 
+      });
     }
-    const profile = await prisma.profile.upsert({
-      where: { userId: payload.sub },
-      update: (body as any),
-      create: ({ userId: payload.sub, ...body, skills: body.skills ?? [], expertise: (body as any).expertise ?? [] } as any),
-    });
-    return reply.send({ profile });
   });
 
-  // GET a student's profile by userId (FACULTY)
-  app.get("/v1/profile/:userId", {
+  // Protected: Get my profile (frontend compatible endpoint with enhanced data)
+  app.get("/v1/profile/me", {
+    preHandler: requireAuth,
     schema: {
-      tags: ["profile"],
-      params: z.object({ userId: z.string() }),
+      tags: ["profiles"],
       response: { 200: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { userId } = (req.params as any) as { userId: string };
-    const profile = await prisma.profile.findUnique({ where: { userId } });
+  }, async (req, reply) => {
+    const userId = req.user!.sub;
+
+    // Get profile from database
+    const initialProfile = await prisma.profile.findUnique({
+      where: { userId },
+      include: {
+        personalProjects: true,
+        publications: true,
+        experiences: true,
+        studentBadges: {
+          include: {
+            badge: true,
+          },
+        },
+      },
+    });
+
+    // Get user info from auth service
+    let userInfo: any = null;
+    let collegeName: string | null = null;
+    try {
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      console.log(`Fetching user info from: ${authServiceUrl}/v1/users/${userId}`);
+      
+      const response = await axios.get(`${authServiceUrl}/v1/users/${userId}`, {
+        headers: {
+          'Authorization': req.headers.authorization || '',
+        },
+        timeout: 5000,
+      });
+      
+      console.log('Auth service response:', response.status, response.data);
+      userInfo = response.data.user;
+
+      // Fetch college name if collegeId exists
+      if (userInfo?.collegeId) {
+        try {
+          const collegeResponse = await axios.get(`${authServiceUrl}/v1/colleges/${userInfo.collegeId}`, {
+            headers: {
+              'Authorization': req.headers.authorization || '',
+            },
+            timeout: 5000,
+          });
+          collegeName = collegeResponse.data?.name || null;
+        } catch (collegeError) {
+          console.error('Failed to fetch college info:', collegeError);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch user info:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Axios error details:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          message: error.message
+        });
+      }
+    }
+
+    // Auto-populate name from displayName if null and userInfo is available
+    let profile = initialProfile;
+    if (userInfo?.displayName && (!initialProfile || !(initialProfile as any)?.name)) {
+      profile = await prisma.profile.upsert({
+        where: { userId },
+        update: { name: userInfo.displayName },
+        create: { 
+          userId,
+          name: userInfo.displayName,
+        },
+        include: {
+          personalProjects: true,
+          publications: true,
+          experiences: true,
+          studentBadges: {
+            include: {
+              badge: true,
+            },
+          },
+        },
+      });
+    }
+
+    // Combine profile and user data (use auth service avatarUrl as primary source)
+    const enhancedProfile = {
+      id: profile?.id || '',
+      userId,
+      name: (profile as any)?.name || userInfo?.displayName || '',
+      displayName: userInfo?.displayName || '',
+      email: userInfo?.email || '',
+      avatarUrl: userInfo?.avatarUrl || '',
+      bio: (profile as any)?.bio || '',
+      skills: (profile as any)?.skills || [],
+      linkedIn: (profile as any)?.linkedIn || '',
+      github: (profile as any)?.github || '',
+      twitter: (profile as any)?.twitter || '',
+      resumeUrl: (profile as any)?.resumeUrl || '',
+      contactInfo: (profile as any)?.contactInfo || '',
+      phoneNumber: (profile as any)?.phoneNumber || '',
+      alternateEmail: (profile as any)?.alternateEmail || '',
+      collegeName: collegeName,
+      collegeId: userInfo?.collegeId || '',
+      collegeMemberId: userInfo?.collegeMemberId || '',
+      department: (profile as any)?.department || userInfo?.department || '',
+      year: (profile as any)?.year || userInfo?.year || null,
+      roles: userInfo?.roles || [],
+      joinedAt: userInfo?.createdAt || profile?.createdAt,
+      experiences: profile?.experiences || [],
+      badges: profile?.studentBadges || [],
+      projects: profile?.personalProjects || [],
+      publications: profile?.publications || [],
+    };
+
+    return reply.send({ profile: enhancedProfile });
+  });
+
+  // Protected: Create/Update my profile (frontend compatible endpoint)
+  app.put("/v1/profile/me", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      body: updateProfileSchema,
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof updateProfileSchema>;
+    const userId = req.user!.sub;
+
+    // Separate user model fields from profile model fields
+    const { displayName, avatarUrl, year, department, ...profileData } = data;
+
+    // Update user model fields in auth service if provided
+    if (displayName || avatarUrl || year !== undefined || department) {
+      try {
+        const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+        const updateData: any = {};
+        if (displayName) updateData.displayName = displayName;
+        if (avatarUrl) updateData.avatarUrl = avatarUrl;
+        if (year !== undefined) updateData.year = year;
+        if (department) updateData.department = department;
+        
+        await axios.put(`${authServiceUrl}/v1/users/${userId}`, 
+          updateData,
+          {
+            headers: {
+              'Authorization': req.headers.authorization || '',
+            },
+            timeout: 5000,
+          }
+        );
+      } catch (error) {
+        console.error('Failed to update user data in auth service:', error);
+        return reply.code(500).send({ message: "Failed to update user data" });
+      }
+    }
+
+    // Update profile data in profile service
+    const profile = await prisma.profile.upsert({
+      where: { userId },
+      update: profileData,
+      create: {
+        userId,
+        ...profileData,
+      },
+      include: {
+        personalProjects: true,
+        publications: true,
+        experiences: true,
+        studentBadges: {
+          include: {
+            badge: true,
+          },
+        },
+      },
+    });
+
     return reply.send({ profile });
   });
 
-  // Publications
+  // Protected: Get user profile by ID (frontend compatible endpoint)
+  app.get("/v1/profile/:userId", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      params: z.object({ userId: z.string().cuid() }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      include: {
+        personalProjects: true,
+        publications: true,
+        experiences: true,
+        studentBadges: {
+          include: {
+            badge: true,
+          },
+        },
+      },
+    });
+
+    return reply.send({ profile });
+  });
+
+  // Protected: Get enhanced user profile (with auth service data)
+  app.get("/v1/profile/user/:userId", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      params: z.object({ userId: z.string().cuid() }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+
+    // Get profile from database
+    const initialProfile = await prisma.profile.findUnique({
+      where: { userId },
+      include: {
+        personalProjects: true,
+        publications: true,
+        experiences: true,
+        studentBadges: {
+          include: {
+            badge: true,
+          },
+        },
+      },
+    });
+
+    // Get user info from auth service
+    let userInfo: any = null;
+    let collegeName: string | null = null;
+    try {
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      console.log(`Fetching user info from: ${authServiceUrl}/v1/users/${userId}`);
+      
+      const response = await axios.get(`${authServiceUrl}/v1/users/${userId}`, {
+        headers: {
+          'Authorization': req.headers.authorization || '',
+        },
+        timeout: 5000,
+      });
+      
+      console.log('Auth service response:', response.status, response.data);
+      userInfo = response.data.user;
+
+      // Fetch college name if collegeId exists
+      if (userInfo?.collegeId) {
+        try {
+          const collegeResponse = await axios.get(`${authServiceUrl}/v1/colleges/${userInfo.collegeId}`, {
+            headers: {
+              'Authorization': req.headers.authorization || '',
+            },
+            timeout: 5000,
+          });
+          collegeName = collegeResponse.data?.name || null;
+        } catch (collegeError) {
+          console.error('Failed to fetch college info:', collegeError);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch user info:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Axios error details:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          message: error.message
+        });
+      }
+    }
+
+    // Auto-populate name from displayName if null and userInfo is available
+    let profile = initialProfile;
+    if (userInfo?.displayName && (!initialProfile || !(initialProfile as any)?.name)) {
+      profile = await prisma.profile.upsert({
+        where: { userId },
+        update: { name: userInfo.displayName },
+        create: { 
+          userId,
+          name: userInfo.displayName,
+        },
+        include: {
+          personalProjects: true,
+          publications: true,
+          experiences: true,
+          studentBadges: {
+            include: {
+              badge: true,
+            },
+          },
+        },
+      });
+    }
+
+    // Combine profile and user data (use auth service avatarUrl as primary source)
+    const enhancedProfile = {
+      id: profile?.id || '',
+      userId,
+      name: (profile as any)?.name || userInfo?.displayName || '',
+      displayName: userInfo?.displayName || '',
+      email: userInfo?.email || '',
+      avatarUrl: userInfo?.avatarUrl || '',
+      bio: (profile as any)?.bio || '',
+      skills: (profile as any)?.skills || [],
+      linkedIn: (profile as any)?.linkedIn || '',
+      github: (profile as any)?.github || '',
+      twitter: (profile as any)?.twitter || '',
+      resumeUrl: (profile as any)?.resumeUrl || '',
+      contactInfo: (profile as any)?.contactInfo || '',
+      phoneNumber: (profile as any)?.phoneNumber || '',
+      alternateEmail: (profile as any)?.alternateEmail || '',
+      collegeName: collegeName,
+      collegeId: userInfo?.collegeId || '',
+      collegeMemberId: userInfo?.collegeMemberId || '',
+      department: (profile as any)?.department || userInfo?.department || '',
+      year: (profile as any)?.year || userInfo?.year || null,
+      roles: userInfo?.roles || [],
+      joinedAt: userInfo?.createdAt || profile?.createdAt,
+      experiences: profile?.experiences || [],
+      badges: profile?.studentBadges || [],
+      projects: profile?.personalProjects || [],
+      publications: profile?.publications || [],
+    };
+
+    return reply.send({ profile: enhancedProfile });
+  });
+
+  // Protected: Update my profile (legacy endpoint)
+  app.put("/v1/profiles/me", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      body: updateProfileSchema,
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof updateProfileSchema>;
+    const userId = req.user!.sub;
+
+    const profile = await prisma.profile.upsert({
+      where: { userId },
+      update: data,
+      create: {
+        userId,
+        ...data,
+      },
+      include: {
+        personalProjects: true,
+        publications: true,
+        experiences: true,
+        studentBadges: {
+          include: {
+            badge: true,
+          },
+        },
+      },
+    });
+
+    return reply.send({ profile });
+  });
+
+  // Protected: Get user profile by ID
+  app.get("/v1/profiles/:userId", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      params: z.object({ userId: z.string().cuid() }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      include: {
+        personalProjects: true,
+        publications: true,
+        experiences: true,
+        studentBadges: {
+          include: {
+            badge: true,
+          },
+        },
+      },
+    });
+
+    if (!profile) {
+      return reply.code(404).send({ message: "Profile not found" });
+    }
+
+    return reply.send({ profile });
+  });
+
+  // Protected: Get my personal projects
+  app.get("/v1/profile/me/projects", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["projects"],
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const userId = req.user!.sub;
+
+    const projects = await prisma.personalProject.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return reply.send({ projects });
+  });
+
+  // Protected: Get my publications
   app.get("/v1/profile/me/publications", {
+    preHandler: requireAuth,
     schema: {
       tags: ["publications"],
       response: { 200: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const items = await prisma.publication.findMany({ where: { userId: payload.sub }, orderBy: { year: "desc" } });
-    return reply.send({ publications: items });
+  }, async (req, reply) => {
+    const userId = req.user!.sub;
+
+    const publications = await prisma.publication.findMany({
+      where: { userId },
+      orderBy: { year: 'desc' },
+    });
+
+    return reply.send({ publications });
   });
 
-  app.post("/v1/profile/me/publications", {
+  // Protected: Create personal project
+  app.post("/v1/profiles/me/projects", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["projects"],
+      body: personalProjectSchema,
+      response: { 201: z.any() },
+    },
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof personalProjectSchema>;
+
+    // Ensure profile exists
+    await prisma.profile.upsert({
+      where: { userId: req.user!.sub },
+      update: {},
+      create: { 
+        userId: req.user!.sub,
+      },
+    });
+
+    const project = await prisma.personalProject.create({
+      data: {
+        ...data,
+        profile: { connect: { userId: req.user!.sub } },
+      },
+    });
+
+    return reply.code(201).send({ project });
+  });
+
+  // Protected: Update personal project
+  app.put("/v1/profiles/me/projects/:projectId", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["projects"],
+      params: z.object({ projectId: z.string().cuid() }),
+      body: personalProjectSchema,
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { projectId } = req.params as { projectId: string };
+    const data = req.body as z.infer<typeof personalProjectSchema>;
+
+    // Check ownership
+    const existingProject = await prisma.personalProject.findFirst({
+      where: { 
+        id: projectId,
+        profile: { userId: req.user!.sub },
+      },
+    });
+
+    if (!existingProject) {
+      return reply.code(404).send({ message: "Project not found" });
+    }
+
+    const project = await prisma.personalProject.update({
+      where: { id: projectId },
+      data,
+    });
+
+    return reply.send({ project });
+  });
+
+  // Protected: Delete personal project
+  app.delete("/v1/profiles/me/projects/:projectId", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["projects"],
+      params: z.object({ projectId: z.string().cuid() }),
+      response: { 204: z.any() },
+    },
+  }, async (req, reply) => {
+    const { projectId } = req.params as { projectId: string };
+
+    // Check ownership
+    const existingProject = await prisma.personalProject.findFirst({
+      where: { 
+        id: projectId,
+        profile: { userId: req.user!.sub },
+      },
+    });
+
+    if (!existingProject) {
+      return reply.code(404).send({ message: "Project not found" });
+    }
+
+    await prisma.personalProject.delete({
+      where: { id: projectId },
+    });
+
+    return reply.code(204).send();
+  });
+
+  // Protected: Create publication (Faculty only)
+  app.post("/v1/profiles/me/publications", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "HEAD_ADMIN"])],
     schema: {
       tags: ["publications"],
       body: publicationSchema,
-      response: { 200: z.any() },
+      response: { 201: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const body = publicationSchema.parse((req as any).body);
-    const created = await prisma.publication.create({ data: { userId: payload.sub, ...body } });
-    return reply.send({ publication: created });
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof publicationSchema>;
+
+    // Ensure profile exists
+    await prisma.profile.upsert({
+      where: { userId: req.user!.sub },
+      update: {},
+      create: { 
+        userId: req.user!.sub,
+      },
+    });
+
+    const publication = await prisma.publication.create({
+      data: {
+        ...data,
+        profile: { connect: { userId: req.user!.sub } },
+      },
+    });
+
+    return reply.code(201).send({ publication });
   });
 
-  app.put("/v1/profile/me/publications/:id", {
+  // Protected: Update publication (Faculty only)
+  app.put("/v1/profiles/me/publications/:publicationId", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "HEAD_ADMIN"])],
     schema: {
       tags: ["publications"],
-      params: z.object({ id: z.string() }),
-      body: publicationSchema.partial(),
+      params: z.object({ publicationId: z.string().cuid() }),
+      body: publicationSchema,
       response: { 200: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { id } = (req.params as any) as { id: string };
-    const body = publicationSchema.partial().parse((req as any).body);
-    const existing = await prisma.publication.findFirst({ where: { id, userId: payload.sub } });
-    if (!existing) return reply.code(404).send({ message: "Not found" });
-    const updated = await prisma.publication.update({ where: { id }, data: body });
-    return reply.send({ publication: updated });
+  }, async (req, reply) => {
+    const { publicationId } = req.params as { publicationId: string };
+    const data = req.body as z.infer<typeof publicationSchema>;
+
+    // Check ownership
+    const existingPublication = await prisma.publication.findFirst({
+      where: { 
+        id: publicationId,
+        profile: { userId: req.user!.sub },
+      },
+    });
+
+    if (!existingPublication) {
+      return reply.code(404).send({ message: "Publication not found" });
+    }
+
+    const publication = await prisma.publication.update({
+      where: { id: publicationId },
+      data,
+    });
+
+    return reply.send({ publication });
   });
 
-  app.delete("/v1/profile/me/publications/:id", {
+  // Protected: Delete publication (Faculty only)
+  app.delete("/v1/profiles/me/publications/:publicationId", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "HEAD_ADMIN"])],
     schema: {
       tags: ["publications"],
-      params: z.object({ id: z.string() }),
-      response: { 200: z.any() },
+      params: z.object({ publicationId: z.string().cuid() }),
+      response: { 204: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { id } = (req.params as any) as { id: string };
-    const existing = await prisma.publication.findFirst({ where: { id, userId: payload.sub } });
-    if (!existing) return reply.code(404).send({ message: "Not found" });
-    await prisma.publication.delete({ where: { id } });
-    return reply.send({ success: true });
+  }, async (req, reply) => {
+    const { publicationId } = req.params as { publicationId: string };
+
+    // Check ownership
+    const existingPublication = await prisma.publication.findFirst({
+      where: { 
+        id: publicationId,
+        profile: { userId: req.user!.sub },
+      },
+    });
+
+    if (!existingPublication) {
+      return reply.code(404).send({ message: "Publication not found" });
+    }
+
+    await prisma.publication.delete({
+      where: { id: publicationId },
+    });
+
+    return reply.code(204).send({ message: "Publication deleted successfully" });
   });
 
-  // Personal Projects
-  app.get("/v1/profile/me/projects", {
+  // Protected: Get my experiences
+  app.get("/v1/profile/me/experiences", {
+    preHandler: requireAuth,
     schema: {
-      tags: ["projects"],
+      tags: ["experiences"],
       response: { 200: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["STUDENT"]);
-    const items = await prisma.personalProject.findMany({ where: { userId: payload.sub }, orderBy: { createdAt: "desc" } });
-    return reply.send({ projects: items });
+  }, async (req, reply) => {
+    const userId = req.user!.sub;
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { experiences: true },
+    });
+
+    return reply.send({ experiences: profile?.experiences || [] });
   });
 
-  app.post("/v1/profile/me/projects", {
+  // Protected: Create experience
+  app.post("/v1/profile/experiences", {
+    preHandler: requireAuth,
     schema: {
-      tags: ["projects"],
-      body: projectSchema,
+      tags: ["experiences"],
+      body: experienceSchema,
       response: { 200: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["STUDENT"]);
-    const body = projectSchema.parse((req as any).body);
-    const created = await prisma.personalProject.create({ data: { userId: payload.sub, ...body } });
-    return reply.send({ project: created });
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof experienceSchema>;
+    const userId = req.user!.sub;
+
+    // Ensure profile exists
+    await prisma.profile.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
+
+    const experience = await prisma.experience.create({
+      data: {
+        ...data,
+        profile: { connect: { userId } },
+      },
+    });
+
+    return reply.send({ experience });
   });
 
-  app.put("/v1/profile/me/projects/:id", {
+  // Protected: Update experience
+  app.put("/v1/profile/experiences/:id", {
+    preHandler: requireAuth,
     schema: {
-      tags: ["projects"],
-      params: z.object({ id: z.string() }),
-      body: projectSchema.partial(),
+      tags: ["experiences"],
+      params: z.object({ id: z.string().cuid() }),
+      body: experienceSchema,
       response: { 200: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["STUDENT"]);
-    const { id } = (req.params as any) as { id: string };
-    const body = projectSchema.partial().parse((req as any).body);
-    const existing = await prisma.personalProject.findFirst({ where: { id, userId: payload.sub } });
-    if (!existing) return reply.code(404).send({ message: "Not found" });
-    const updated = await prisma.personalProject.update({ where: { id }, data: body });
-    return reply.send({ project: updated });
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const data = req.body as z.infer<typeof experienceSchema>;
+    const userId = req.user!.sub;
+
+    // Verify ownership through profile
+    const existingExperience = await prisma.experience.findFirst({
+      where: { 
+        id,
+        profile: { userId }
+      },
+    });
+
+    if (!existingExperience) {
+      return reply.code(404).send({ message: "Experience not found or access denied" });
+    }
+
+    const experience = await prisma.experience.update({
+      where: { id },
+      data,
+    });
+
+    return reply.send({ experience });
   });
 
-  app.delete("/v1/profile/me/projects/:id", {
+  // Protected: Delete experience
+  app.delete("/v1/profile/experiences/:id", {
+    preHandler: requireAuth,
     schema: {
-      tags: ["projects"],
-      params: z.object({ id: z.string() }),
-      response: { 200: z.any() },
+      tags: ["profiles"],
+      params: z.object({ id: z.string().cuid() }),
+      response: { 200: z.any(), 404: errorResponseSchema },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["STUDENT"]);
-    const { id } = (req.params as any) as { id: string };
-    const existing = await prisma.personalProject.findFirst({ where: { id, userId: payload.sub } });
-    if (!existing) return reply.code(404).send({ message: "Not found" });
-    await prisma.personalProject.delete({ where: { id } });
-    return reply.send({ success: true });
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const userId = req.user!.sub;
+
+    // Check if experience exists and belongs to user
+    const experience = await prisma.experience.findUnique({
+      where: { id },
+      include: { profile: true },
+    });
+
+    if (!experience || experience.profile.userId !== userId) {
+      return reply.code(404).send({ message: "Experience not found" });
+    }
+
+    await prisma.experience.delete({
+      where: { id },
+    });
+
+    return reply.send({ message: "Experience deleted successfully" });
   });
 
-  // Badge Definitions - list (any authenticated)
-  app.get("/v1/badges/definitions", {
+  // Skills CRUD endpoints
+  
+  // Protected: Get my skills
+  app.get("/v1/profile/me/skills", {
+    preHandler: requireAuth,
     schema: {
-      tags: ["badges"],
-      response: { 200: z.any() },
+      tags: ["profiles"],
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
     },
-  }, async (req: any, reply: any) => {
-    await requireAuth(req);
-    const items = await prisma.badgeDefinition.findMany({ orderBy: { name: "asc" } });
-    return reply.send({ definitions: items });
+  }, async (req, reply) => {
+    const userId = req.user!.sub;
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: profile?.skills || [] });
   });
 
-  // Badge Definitions - create (FACULTY)
-  app.post("/v1/badges/definitions", {
+  // Protected: Update my skills
+  app.put("/v1/profile/me/skills", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      body: z.object({ skills: z.array(z.string()) }),
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const { skills } = req.body as { skills: string[] };
+    const userId = req.user!.sub;
+
+    // Validate and clean skills
+    const cleanedSkills = skills
+      .map(skill => skill.trim())
+      .filter(skill => skill.length > 0)
+      .slice(0, 50); // Limit to 50 skills
+
+    const profile = await prisma.profile.upsert({
+      where: { userId },
+      update: { skills: cleanedSkills },
+      create: {
+        userId,
+        skills: cleanedSkills,
+      },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: profile.skills });
+  });
+
+  // Protected: Add a skill
+  app.post("/v1/profile/me/skills", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      body: z.object({ skill: z.string().min(1).max(100) }),
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const { skill } = req.body as { skill: string };
+    const userId = req.user!.sub;
+
+    const cleanedSkill = skill.trim();
+    if (!cleanedSkill) {
+      return reply.code(400).send({ message: "Skill cannot be empty" });
+    }
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { skills: true },
+    });
+
+    const currentSkills = profile?.skills || [];
+    
+    // Check if skill already exists (case insensitive)
+    if (currentSkills.some(s => s.toLowerCase() === cleanedSkill.toLowerCase())) {
+      return reply.code(400).send({ message: "Skill already exists" });
+    }
+
+    // Limit to 50 skills
+    if (currentSkills.length >= 50) {
+      return reply.code(400).send({ message: "Maximum 50 skills allowed" });
+    }
+
+    const updatedSkills = [...currentSkills, cleanedSkill];
+
+    const updatedProfile = await prisma.profile.upsert({
+      where: { userId },
+      update: { skills: updatedSkills },
+      create: {
+        userId,
+        skills: updatedSkills,
+      },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: updatedProfile.skills });
+  });
+
+  // Protected: Remove a skill
+  app.delete("/v1/profile/me/skills/:skill", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["profiles"],
+      params: z.object({ skill: z.string() }),
+      response: { 200: z.object({ skills: z.array(z.string()) }) },
+    },
+  }, async (req, reply) => {
+    const { skill } = req.params as { skill: string };
+    const userId = req.user!.sub;
+
+    const decodedSkill = decodeURIComponent(skill);
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { skills: true },
+    });
+
+    const currentSkills = profile?.skills || [];
+    const updatedSkills = currentSkills.filter(s => s !== decodedSkill);
+
+    const updatedProfile = await prisma.profile.upsert({
+      where: { userId },
+      update: { skills: updatedSkills },
+      create: {
+        userId,
+        skills: updatedSkills,
+      },
+      select: { skills: true },
+    });
+
+    return reply.send({ skills: updatedProfile.skills });
+  });
+
+  // Protected: Create badge definition (Faculty/Admin only)
+  app.post("/v1/badge-definitions", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
     schema: {
       tags: ["badges"],
       body: badgeDefinitionSchema,
-      response: { 200: z.any() },
+      response: { 201: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const body = badgeDefinitionSchema.parse((req as any).body);
-    const created = await prisma.badgeDefinition.create({ data: { ...body, createdBy: payload.sub } });
-    return reply.send({ definition: created });
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof badgeDefinitionSchema>;
+    
+    console.log('Badge creation request body:', JSON.stringify(req.body, null, 2));
+    console.log('Validated data:', JSON.stringify(data, null, 2));
+
+    // Explicitly handle optional fields to ensure they're saved properly
+    const createData: any = {
+      name: data.name,
+      description: data.description,
+      rarity: data.rarity,
+      createdBy: req.user!.sub,
+    };
+
+    // Add optional fields only if they exist and are not empty
+    if (data.icon && data.icon.trim()) {
+      createData.icon = data.icon;
+    }
+    if (data.color && data.color.trim()) {
+      createData.color = data.color;
+    }
+    if (data.category && data.category.trim()) {
+      createData.category = data.category;
+    }
+    if (data.criteria && data.criteria.trim()) {
+      createData.criteria = data.criteria;
+    }
+
+    console.log('Final create data:', JSON.stringify(createData, null, 2));
+
+    const badgeDefinition = await prisma.badgeDefinition.create({
+      data: createData,
+    });
+
+    console.log('Created badge definition:', JSON.stringify(badgeDefinition, null, 2));
+    return reply.code(201).send({ badgeDefinition });
   });
 
-  // Badge Definitions - update (FACULTY)
-  app.put("/v1/badges/definitions/:id", {
-    schema: {
-      tags: ["badges"],
-      params: z.object({ id: z.string() }),
-      body: badgeDefinitionSchema.partial(),
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { id } = (req.params as any) as { id: string };
-    const body = badgeDefinitionSchema.partial().parse((req as any).body);
-    const existing = await prisma.badgeDefinition.findUnique({ where: { id } });
-    if (!existing) return reply.code(404).send({ message: "Not found" });
-    const updated = await prisma.badgeDefinition.update({ where: { id }, data: body });
-    return reply.send({ definition: updated });
-  });
-
-  // Badge Definitions - delete (FACULTY)
-  app.delete("/v1/badges/definitions/:id", {
-    schema: {
-      tags: ["badges"],
-      params: z.object({ id: z.string() }),
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { id } = (req.params as any) as { id: string };
-    const count = await prisma.studentBadge.count({ where: { badgeId: id } });
-    if (count > 0) return reply.code(400).send({ message: "Cannot delete a badge that has awards" });
-    await prisma.badgeDefinition.delete({ where: { id } });
-    return reply.send({ success: true });
-  });
-
-  // Award a badge (FACULTY)
-  app.post("/v1/badges/awards", {
+  // Protected: Award badge (Faculty/Admin only)
+  app.post("/v1/badges/award", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
     schema: {
       tags: ["badges"],
       body: awardBadgeSchema,
-      response: { 200: z.any() },
+      response: { 201: z.any() },
     },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const body = awardBadgeSchema.parse((req as any).body);
-    const badge = await prisma.badgeDefinition.findUnique({ where: { id: body.badgeId } });
-    if (!badge) return reply.code(400).send({ message: "Invalid badgeId" });
-    const student = await prisma.profile.findUnique({ where: { userId: body.studentId } });
-    if (!student) return reply.code(400).send({ message: "Invalid studentId" });
-    const created = await prisma.studentBadge.create({
-      data: {
-        studentId: body.studentId,
-        badgeId: body.badgeId,
-        reason: body.reason,
-        projectId: body.projectId,
-        eventId: body.eventId,
-        awardedBy: payload.sub,
-        awardedByName: payload.name || null,
+  }, async (req, reply) => {
+    const data = req.body as z.infer<typeof awardBadgeSchema>;
+    
+    console.log('Badge award request body:', JSON.stringify(req.body, null, 2));
+    console.log('Validated data:', JSON.stringify(data, null, 2));
+    
+    // Verify the target user exists in auth service
+    const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+    try {
+      const userResponse = await axios.get(`${authServiceUrl}/v1/users/${data.userId}`, {
+        headers: {
+          Authorization: req.headers.authorization,
+        },
+      });
+      
+      if (!userResponse.data) {
+        return reply.code(404).send({
+          error: "User not found",
+          message: `User with ID ${data.userId} does not exist`,
+        });
+      }
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        return reply.code(404).send({
+          error: "User not found", 
+          message: `User with ID ${data.userId} does not exist`,
+        });
+      }
+      return reply.code(500).send({
+        error: "Failed to verify user",
+        message: "Could not verify user existence",
+      });
+    }
+
+    // Ensure target user's profile exists
+    await prisma.profile.upsert({
+      where: { userId: data.userId },
+      update: {},
+      create: { 
+        userId: data.userId,
       },
     });
-    return reply.send({ award: created });
-  });
 
-  // Get awards for a student (students can view their own; faculty can view any by studentId)
-  app.get("/v1/badges/awards", {
-    schema: {
-      tags: ["badges"],
-      querystring: z.object({ studentId: z.string().optional() }),
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    const { studentId } = (req.query as any) as { studentId?: string };
-    let targetId = payload.sub;
-    if (studentId && studentId !== payload.sub) {
-      requireRole(payload, ["FACULTY"]);
-      targetId = studentId;
-    }
-    const awards = await prisma.studentBadge.findMany({ where: { studentId: targetId }, orderBy: { awardedAt: "desc" } });
-    return reply.send({ awards });
-  });
-
-  // Recent awards (FACULTY)
-  app.get("/v1/badges/awards/recent", {
-    schema: {
-      tags: ["badges"],
-      querystring: z.object({ limit: z.string().optional() }),
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { limit } = (req.query as any) as { limit?: string };
-    const take = Math.min(Math.max(parseInt(limit || "10", 10) || 10, 1), 50);
-    const awards = await prisma.studentBadge.findMany({ orderBy: { awardedAt: "desc" }, take });
-    return reply.send({ awards });
-  });
-
-  // Award counts per badge (FACULTY)
-  app.get("/v1/badges/stats/award-counts", {
-    schema: {
-      tags: ["badges"],
-      response: { 200: z.any() },
-    },
-  }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const grouped = await prisma.studentBadge.groupBy({
-      by: ["badgeId"],
-      _count: { badgeId: true },
+    const badge = await prisma.studentBadge.create({
+      data: {
+        studentId: data.userId,
+        badgeId: data.badgeDefinitionId,
+        awardedBy: req.user!.sub,
+        reason: data.reason,
+        projectId: data.projectId,
+        eventId: data.eventId,
+        awardedByName: data.awardedByName,
+      },
+      include: {
+        badge: true,
+      },
     });
-    const counts = Object.fromEntries(grouped.map((g) => [g.badgeId, (g as any)._count.badgeId as number]));
-    return reply.send({ counts });
+
+    return reply.code(201).send({ badge });
+  });
+
+  // Protected: Export badge awards data (Faculty/Admin only)
+  app.get("/v1/badges/export", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
+    schema: {
+      tags: ["badges"],
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    try {
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      
+      // Fetch all badge awards with badge definitions 
+      const awards = await prisma.studentBadge.findMany({
+        include: {
+          badge: true,
+        },
+        orderBy: {
+          awardedAt: 'desc',
+        },
+      });
+
+      // Fetch student details from auth service for each unique student
+      const studentIds = [...new Set(awards.map(award => award.studentId))];
+      const studentDetails = new Map();
+
+      for (const studentId of studentIds) {
+        try {
+          const userResponse = await axios.get(`${authServiceUrl}/v1/users/${studentId}`, {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          });
+          if (userResponse.data && userResponse.data.user) {
+            studentDetails.set(studentId, userResponse.data.user);
+          }
+        } catch (error) {
+          console.error(`Failed to fetch details for student ${studentId}:`, error);
+        }
+      }
+
+      // Format export data
+      const exportData = awards.map(award => {
+        const studentInfo = studentDetails.get(award.studentId);
+        console.log(`Export mapping for ${award.studentId}:`, studentInfo);
+        return {
+          badgeName: award.badge.name,
+          studentName: studentInfo?.displayName || studentInfo?.name || 'Unknown',
+          collegeMemberId: studentInfo?.collegeMemberId || 'N/A',
+          department: studentInfo?.department || 'N/A',
+          awardedAt: award.awardedAt,
+          awardedByName: award.awardedByName || 'Unknown',
+          reason: award.reason,
+          badgeCategory: award.badge.category || 'N/A',
+          badgeRarity: award.badge.rarity,
+          projectName: award.projectId ? `Project-${award.projectId}` : 'N/A', // TODO: Fetch actual project name
+          eventName: award.eventId ? `Event-${award.eventId}` : 'N/A', // TODO: Fetch actual event name
+        };
+      });
+
+      return reply.send(exportData);
+    } catch (error) {
+      console.error('Export error:', error);
+      return reply.code(500).send({
+        error: 'Export failed',
+        message: 'Failed to export badge data',
+      });
+    }
+  });
+
+  // Public: List badge definitions
+  app.get("/v1/badge-definitions", {
+    schema: {
+      tags: ["badges"],
+      response: { 200: z.any() },
+    },
+  }, async (_req, reply) => {
+    const badgeDefinitions = await prisma.badgeDefinition.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    reply.code(200).send({ badgeDefinitions });
+  });
+
+  // Get badges for a specific user
+  app.get("/v1/profile/badges/:userId", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      params: z.object({
+        userId: z.string().cuid(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+
+    const badges = await prisma.studentBadge.findMany({
+      where: { studentId: userId },
+      include: {
+        badge: true,
+      },
+      orderBy: { awardedAt: "desc" },
+    });
+
+    reply.code(200).send({ badges });
+  });
+
+  // Protected: Get recent badge awards (Faculty/Admin only)
+  app.get("/v1/badges/recent", {
+    preHandler: [requireAuth, requireRole(["FACULTY", "DEPT_ADMIN", "HEAD_ADMIN"])],
+    schema: {
+      tags: ["badges"],
+      querystring: z.object({
+        limit: z.string().optional(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { limit } = req.query as { limit?: string };
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+
+    const awards = await prisma.studentBadge.findMany({
+      take: limitNum,
+      orderBy: { awardedAt: "desc" },
+      include: {
+        badge: true,
+      },
+    });
+
+    // Fetch student details for display names and college member IDs
+    const studentIds = [...new Set(awards.map(award => award.studentId))];
+    const studentDetails = new Map();
+
+    for (const studentId of studentIds) {
+      try {
+        const userResponse = await axios.get(`${authServiceUrl}/v1/users/${studentId}`, {
+          headers: {
+            Authorization: req.headers.authorization,
+          },
+        });
+        console.log(`Auth service response for student ${studentId}:`, userResponse.data);
+        if (userResponse.data && userResponse.data.user) {
+          studentDetails.set(studentId, userResponse.data.user);
+        }
+      } catch (error) {
+        console.error(`Failed to fetch details for student ${studentId}:`, error);
+      }
+    }
+
+    // Enhance awards with student details
+    const enhancedAwards = awards.map(award => {
+      const studentInfo = studentDetails.get(award.studentId);
+      console.log(`Student ${award.studentId} details:`, studentInfo);
+      return {
+        ...award,
+        studentName: studentInfo?.displayName || studentInfo?.name,
+        collegeMemberId: studentInfo?.collegeMemberId,
+      };
+    });
+
+    return reply.send({ awards: enhancedAwards });
+  });
+
+  // Get badge award counts
+  app.get("/v1/badges/counts", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const badgeDefinitions = await prisma.badgeDefinition.findMany({
+      select: { id: true },
+    });
+
+    const counts: Record<string, number> = {};
+    
+    for (const badge of badgeDefinitions) {
+      const count = await prisma.studentBadge.count({
+        where: { badgeId: badge.id },
+      });
+      counts[badge.id] = count;
+    }
+
+    reply.code(200).send({ counts });
+  });
+
+  // Check event creation eligibility for a user
+  app.get("/v1/badges/eligibility/:userId", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      params: z.object({
+        userId: z.string().cuid(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+    const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+
+    try {
+      // Get user's college info from auth service
+      const userResponse = await axios.get(`${authServiceUrl}/v1/users/${userId}`, {
+        headers: {
+          Authorization: req.headers.authorization,
+        },
+      });
+      
+      const user = userResponse.data?.user;
+      if (!user?.collegeId) {
+        return reply.code(400).send({ 
+          error: "User college information not found",
+          canCreate: false,
+          missing: []
+        });
+      }
+
+      // Check cache first
+      const cached = await prisma.badgeEligibilityCache.findUnique({
+        where: { userId },
+      });
+
+      if (cached && cached.expiresAt > new Date()) {
+        return reply.send({
+          canCreate: cached.canCreate,
+          badgeCount: cached.badgeCount,
+          categories: cached.categories,
+          lastChecked: cached.lastChecked,
+        });
+      }
+
+      // Get badge policy for user's college
+      const policy = await prisma.badgePolicy.findUnique({
+        where: { collegeId: user.collegeId },
+      });
+
+      const requiredBadges = policy?.eventCreationRequired || 8;
+      const requiredCategories = policy?.categoryDiversityMin || 4;
+
+      // Get user's badges with categories
+      const userBadges = await prisma.studentBadge.findMany({
+        where: { studentId: userId },
+        include: {
+          badge: {
+            select: { category: true, isActive: true },
+          },
+        },
+      });
+
+      const activeBadges = userBadges.filter(award => award.badge.isActive);
+      const categories = [...new Set(activeBadges.map(award => award.badge.category).filter(Boolean))];
+      
+      const canCreate = activeBadges.length >= requiredBadges && categories.length >= requiredCategories;
+
+      // Update cache
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+      await prisma.badgeEligibilityCache.upsert({
+        where: { userId },
+        update: {
+          canCreate,
+          badgeCount: activeBadges.length,
+          categories,
+          lastChecked: new Date(),
+          expiresAt,
+        },
+        create: {
+          userId,
+          canCreate,
+          badgeCount: activeBadges.length,
+          categories,
+          expiresAt,
+        },
+      });
+
+      return reply.send({
+        canCreate,
+        badgeCount: activeBadges.length,
+        requiredBadges,
+        categories,
+        requiredCategories,
+        lastChecked: new Date(),
+      });
+
+    } catch (error) {
+      console.error('Badge eligibility check failed:', error);
+      return reply.code(500).send({
+        error: "Failed to check badge eligibility",
+        canCreate: false,
+      });
+    }
+  });
+
+  // Manage badge policies (Admin only)
+  app.post("/v1/badges/policies", {
+    preHandler: [requireAuth, requireRole(["HEAD_ADMIN"])],
+    schema: {
+      tags: ["badges"],
+      body: z.object({
+        collegeId: z.string().cuid(),
+        departmentId: z.string().optional(),
+        eventCreationRequired: z.number().int().min(1).default(8),
+        categoryDiversityMin: z.number().int().min(1).default(4),
+      }),
+      response: { 201: z.any() },
+    },
+  }, async (req, reply) => {
+    const data = req.body as any;
+
+    const policy = await prisma.badgePolicy.create({
+      data,
+    });
+
+    return reply.code(201).send({ policy });
+  });
+
+  // Get badge policy for a college
+  app.get("/v1/badges/policies/:collegeId", {
+    preHandler: [requireAuth],
+    schema: {
+      tags: ["badges"],
+      params: z.object({
+        collegeId: z.string().cuid(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { collegeId } = req.params as { collegeId: string };
+
+    const policy = await prisma.badgePolicy.findUnique({
+      where: { collegeId },
+    });
+
+    if (!policy) {
+      // Return default policy
+      return reply.send({
+        policy: {
+          collegeId,
+          eventCreationRequired: 8,
+          categoryDiversityMin: 4,
+          isActive: true,
+        }
+      });
+    }
+
+    return reply.send({ policy });
   });
 }

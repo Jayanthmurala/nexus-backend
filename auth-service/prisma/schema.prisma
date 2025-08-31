@@ -16,6 +16,7 @@ enum Role {
   DEPT_ADMIN
   PLACEMENTS_ADMIN
   HEAD_ADMIN
+  SUPER_ADMIN
 }
 
 enum UserStatus {
@@ -32,6 +33,22 @@ enum TokenType {
 }
 
 // Models
+model College {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  location    String?
+  website     String?
+  departments String[]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+
+  @@index([isActive])
+}
+
 model User {
   id              String      @id @default(cuid())
   email           String      @unique @db.Citext
@@ -43,16 +60,26 @@ model User {
   status          UserStatus  @default(PENDING_VERIFICATION)
   tokenVersion    Int         @default(0)
   lastLoginAt     DateTime?
+  
+  // College and profile fields
+  collegeId       String?
+  department      String?
+  year            Int?        // for students
+  collegeMemberId String?     // student ID, employee ID, etc.
+  
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   deletedAt       DateTime?
 
+  college         College?    @relation(fields: [collegeId], references: [id])
   preferences     UserPreference?
   accounts        OAuthAccount[]
   securityTokens  SecurityToken[]
 
+  @@unique([collegeId, collegeMemberId])
   @@index([status])
   @@index([emailVerifiedAt])
+  @@index([collegeId, department])
 }
 
 model OAuthAccount {

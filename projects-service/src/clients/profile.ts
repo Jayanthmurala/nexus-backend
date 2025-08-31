@@ -1,43 +1,90 @@
 import { env } from "../config/env";
 import type { AccessTokenPayload } from "../utils/jwt";
+import { getUserScopeFromJWT, getUserIdentity } from "./auth";
+import { getCache, CACHE_KEYS, CACHE_TTL } from "../utils/cache";
 
-// Simple in-memory cache for user scope
-const SCOPE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const scopeCache = new Map<string, { collegeId: string; department: string; avatar?: string; displayName?: string; expiresAt: number }>();
+// Cache instance
+const cache = getCache();
 
-export async function getUserScope(req: any, payload: AccessTokenPayload): Promise<{ collegeId: string; department: string; avatar?: string; displayName?: string }> {
-  const cacheKey = payload.sub;
-  const now = Date.now();
-  const cached = cacheCacheGet(cacheKey, now);
+export async function getUserScope(req: any, payload: AccessTokenPayload): Promise<{ collegeId: string; department: string; avatar?: string; displayName?: string; year?: number }> {
+  const cacheKey = CACHE_KEYS.USER_SCOPE(payload.sub);
+  
+  // Check Redis/cache first
+  const cached = await getCachedScope(cacheKey);
   if (cached) return cached;
 
+  // Try JWT-first approach (new tokens with profile object)
+  const jwtScope = getUserScopeFromJWT(payload);
+  if (jwtScope.collegeId && jwtScope.department) {
+    const scope = {
+      collegeId: jwtScope.collegeId,
+      department: jwtScope.department,
+      year: jwtScope.year,
+      displayName: jwtScope.displayName,
+      avatar: (payload as any).avatarUrl || (payload as any).picture,
+    };
+    await setCachedScope(cacheKey, scope);
+    return scope;
+  }
+
+  // Fallback to profile service for backward compatibility
   const auth = req.headers["authorization"] as string | undefined;
   if (!auth) throw new Error("Missing Authorization header for profile lookup");
 
-  const res = await fetch(`${env.PROFILE_BASE_URL}/v1/profile/me`, {
-    headers: { Authorization: auth },
-  });
-  if (!res.ok) {
-    throw new Error(`Profile service responded ${res.status}`);
+  try {
+    // Try auth service first for identity data
+    const identity = await getUserIdentity(payload.sub, auth);
+    const scope = {
+      collegeId: identity.collegeId,
+      department: identity.department,
+      year: identity.year,
+      displayName: identity.displayName,
+      avatar: identity.avatarUrl,
+    };
+    await setCachedScope(cacheKey, scope);
+    return scope;
+  } catch (authError) {
+    console.warn("Auth service fallback failed, trying profile service:", authError);
+    
+    // Final fallback to profile service
+    const res = await fetch(`${env.PROFILE_BASE_URL}/v1/profile/me`, {
+      headers: { Authorization: auth },
+    });
+    if (!res.ok) {
+      throw new Error(`Profile service responded ${res.status}`);
+    }
+    const data = await res.json();
+    const profile = data?.profile as { collegeId?: string; department?: string; avatar?: string } | null;
+    if (!profile?.collegeId || !profile?.department) {
+      throw new Error("Profile is missing collegeId or department");
+    }
+    const scope = {
+      collegeId: profile.collegeId,
+      department: profile.department,
+      avatar: profile.avatar,
+      displayName: payload.name ?? (payload as any).displayName,
+    };
+    await setCachedScope(cacheKey, scope);
+    return scope;
   }
-  const data = await res.json();
-  const profile = data?.profile as { collegeId?: string; department?: string; avatar?: string } | null;
-  if (!profile?.collegeId || !profile?.department) {
-    throw new Error("Profile is missing collegeId or department");
-  }
-  const scope = {
-    collegeId: profile.collegeId,
-    department: profile.department,
-    avatar: profile.avatar,
-    displayName: payload.name ?? (payload as any).displayName,
-  };
-  scopeCache.set(cacheKey, { ...scope, expiresAt: now + SCOPE_TTL_MS });
-  return scope;
 }
 
-function cacheCacheGet(key: string, now: number) {
-  const v = scopeCache.get(key);
-  if (v && v.expiresAt > now) return { collegeId: v.collegeId, department: v.department, avatar: v.avatar, displayName: v.displayName };
-  if (v) scopeCache.delete(key);
+async function getCachedScope(cacheKey: string) {
+  try {
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    console.warn("Cache get error:", error);
+  }
   return null;
+}
+
+async function setCachedScope(cacheKey: string, scope: any) {
+  try {
+    await cache.set(cacheKey, JSON.stringify(scope), CACHE_TTL.USER_SCOPE);
+  } catch (error) {
+    console.warn("Cache set error:", error);
+  }
 }

@@ -52,6 +52,8 @@ model Event {
   archivedAt        DateTime?
 
   registrations     EventRegistration[]
+  approvalFlow      EventApprovalFlow?
+  waitlist          EventWaitlist[]
 
   @@index([collegeId])
   @@index([type])
@@ -70,4 +72,66 @@ model EventRegistration {
   @@unique([eventId, userId])
   @@index([eventId])
   @@index([userId])
+}
+
+// Escalation policies for event approval
+model EscalationPolicy {
+  id                    String  @id @default(cuid())
+  collegeId             String  @unique
+  departmentId          String?
+  escalationDelayHours  Int     @default(72) // 3 days
+  backupApprovers       String[] @default([]) // userId array
+  autoEscalateToHead    Boolean @default(true)
+  isActive              Boolean @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("escalation_policies")
+}
+
+// Track approval workflow and escalations
+model EventApprovalFlow {
+  id                String   @id @default(cuid())
+  eventId           String   @unique
+  submittedAt       DateTime @default(now())
+  assignedTo        String?  // Current approver userId
+  assignedToName    String?  // Display name for UI
+  escalatedAt       DateTime?
+  escalatedTo       String?  // Escalated approver userId
+  escalatedToName   String?  // Display name for UI
+  approvedAt        DateTime?
+  approvedBy        String?  // Final approver userId
+  approvedByName    String?  // Display name for UI
+  rejectedAt        DateTime?
+  rejectedBy        String?  // Rejector userId
+  rejectedByName    String?  // Display name for UI
+  rejectionReason   String?
+  mentorAssigned    String?  // Assigned mentor userId
+  mentorName        String?  // Mentor display name
+  isEscalated       Boolean  @default(false)
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([assignedTo])
+  @@index([submittedAt])
+  @@index([isEscalated])
+  @@map("event_approval_flows")
+}
+
+// Waitlist for events that reach capacity
+model EventWaitlist {
+  id          String   @id @default(cuid())
+  eventId     String
+  userId      String
+  priority    Int      @default(0) // Higher number = higher priority
+  joinedAt    DateTime @default(now())
+  notifiedAt  DateTime?
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, priority])
+  @@index([userId])
+  @@map("event_waitlists")
 }

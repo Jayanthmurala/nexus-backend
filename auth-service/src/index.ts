@@ -6,6 +6,8 @@ import swaggerUI from "@fastify/swagger-ui";
 import { ZodTypeProvider, serializerCompiler, validatorCompiler, jsonSchemaTransform } from "fastify-type-provider-zod";
 import { env } from "./config/env";
 import authRoutes from "./routes/auth.routes";
+import collegeRoutes from "./routes/college.routes";
+import backendAdminRoutes from "./routes/backendAdmin.routes";
 import { getJWKS } from "./utils/jwt";
 
 async function buildServer() {
@@ -30,6 +32,8 @@ async function buildServer() {
       components: {},
       tags: [
         { name: "auth", description: "Authentication endpoints" },
+        { name: "colleges", description: "College management endpoints" },
+        { name: "backend-admin", description: "Backend admin endpoints" },
       ],
     },
     transform: jsonSchemaTransform,
@@ -40,6 +44,8 @@ async function buildServer() {
   app.get("/.well-known/jwks.json", async () => await getJWKS());
 
   await app.register(authRoutes);
+  await app.register(collegeRoutes);
+  await app.register(backendAdminRoutes);
 
   return app;
 }

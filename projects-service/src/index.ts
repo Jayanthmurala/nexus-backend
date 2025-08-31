@@ -5,6 +5,7 @@ import swaggerUI from "@fastify/swagger-ui";
 import { ZodTypeProvider, serializerCompiler, validatorCompiler, jsonSchemaTransform } from "fastify-type-provider-zod";
 import { env } from "./config/env";
 import projectsRoutes from "./routes/projects.routes";
+import { initializeWebSocket } from "./utils/websocket";
 
 async function buildServer() {
   const app = Fastify({ logger: true }).withTypeProvider<ZodTypeProvider>();
@@ -39,9 +40,17 @@ async function buildServer() {
 }
 
 buildServer()
-  .then((app) => app.listen({ port: env.PORT, host: "0.0.0.0" }))
-  .then((address) => {
-    console.log(`Projects service listening at ${address}`);
+  .then((app) => {
+    return app.listen({ port: env.PORT, host: "0.0.0.0" }).then((address) => {
+      console.log(`Projects service listening at ${address}`);
+      
+      // Initialize WebSocket after server starts
+      const server = app.server;
+      initializeWebSocket(server);
+      console.log("WebSocket initialized for real-time project updates");
+      
+      return address;
+    });
   })
   .catch((err) => {
     console.error(err);

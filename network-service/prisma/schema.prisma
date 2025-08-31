@@ -78,6 +78,9 @@ model Post {
   media             PostMedia[]
   reactions         Reaction[]
   comments          Comment[]
+  bookmarks         Bookmark[]
+  tags              PostTag[]
+  links             PostLink[]
 
   @@index([authorId, createdAt])
   @@index([authorCollegeId, visibility, createdAt])
@@ -196,4 +199,55 @@ model AdClick {
 
   @@index([postId, createdAt])
   @@index([userId, createdAt])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId, createdAt])
+}
+
+model Message {
+  id         String    @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  type       String    @default("text")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, readAt])
+}
+
+model PostTag {
+  id        String   @id @default(cuid())
+  postId    String
+  tag       String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, tag])
+  @@index([tag])
+}
+
+model PostLink {
+  id        String   @id @default(cuid())
+  postId    String
+  url       String
+  title     String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
 }

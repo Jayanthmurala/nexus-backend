@@ -21,34 +21,21 @@ async function main() {
     // Tables
     await run(
       client,
-      `CREATE TABLE IF NOT EXISTS "College" (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-      );`
-    );
-
-    await run(
-      client,
       `CREATE TABLE IF NOT EXISTS "Profile" (
         id TEXT PRIMARY KEY,
         "userId" TEXT NOT NULL UNIQUE,
-        "collegeId" TEXT NOT NULL,
-        department TEXT NOT NULL,
-        year INTEGER,
         skills TEXT[] NOT NULL DEFAULT '{}',
         expertise TEXT[] NOT NULL DEFAULT '{}',
-        linkedIn TEXT,
+        "linkedIn" TEXT,
         github TEXT,
         twitter TEXT,
         "resumeUrl" TEXT,
         bio TEXT,
         avatar TEXT,
         "contactInfo" TEXT,
-        "collegeMemberId" TEXT,
         "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
         "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
-        CONSTRAINT "Profile_college_fk" FOREIGN KEY ("collegeId") REFERENCES "College"(id)
+        "Url" TEXT
       );`
     );
 
@@ -63,10 +50,6 @@ async function main() {
     );
     await run(
       client,
-      `ALTER TABLE "Profile" ADD COLUMN IF NOT EXISTS "collegeMemberId" TEXT;`
-    );
-    await run(
-      client,
       `ALTER TABLE "Profile" ADD COLUMN IF NOT EXISTS expertise TEXT[] NOT NULL DEFAULT '{}';`
     );
     await run(
@@ -77,10 +60,9 @@ async function main() {
       client,
       `ALTER TABLE "Profile" ADD COLUMN IF NOT EXISTS "contactInfo" TEXT;`
     );
-
     await run(
       client,
-      `CREATE INDEX IF NOT EXISTS "Profile_college_department_year_idx" ON "Profile" ("collegeId", department, year);`
+      `ALTER TABLE "Profile" ADD COLUMN IF NOT EXISTS "Url" TEXT;`
     );
 
     await run(
