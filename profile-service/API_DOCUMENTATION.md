@@ -1,15 +1,19 @@
 # Profile Service API Documentation
 
 ## Overview
+
 The Profile Service manages user profiles, personal projects, publications, experiences, and badges for the Nexus platform. It integrates with the Auth Service to provide enhanced profile data.
 
 ## Base URL
+
 ```
 http://localhost:4002
 ```
 
 ## Authentication
+
 Most endpoints require JWT authentication via the `Authorization` header:
+
 ```
 Authorization: Bearer <jwt_token>
 ```
@@ -21,11 +25,13 @@ Authorization: Bearer <jwt_token>
 ### 1. Colleges
 
 #### GET /v1/colleges
+
 Get list of all colleges (public endpoint).
 
 **Authentication:** None required
 
 **Response:**
+
 ```json
 {
   "colleges": [
@@ -43,11 +49,13 @@ Get list of all colleges (public endpoint).
 ### 2. Profile Management
 
 #### GET /v1/profile/me
+
 Get current user's profile with all related data.
 
 **Authentication:** Required
 
 **Response:**
+
 ```json
 {
   "profile": {
@@ -76,11 +84,13 @@ Get current user's profile with all related data.
 ```
 
 #### PUT /v1/profile/me
+
 Create or update current user's profile.
 
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
 <<<<<<< HEAD
@@ -113,6 +123,7 @@ Create or update current user's profile.
 
 <<<<<<< HEAD
 **Field Descriptions:**
+
 - **User Model Fields** (updated via Auth Service):
   - `displayName`: User's display name (1-100 characters)
   - `avatarUrl`: Profile picture URL
@@ -130,27 +141,32 @@ Create or update current user's profile.
   - `alternateEmail`: Alternative email address
 
 =======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-**Response:**
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > **Response:**
+
 ```json
 {
   "profile": {
     "id": "profile_id",
-    "userId": "user_id",
+    "userId": "user_id"
     // ... updated profile data
   }
 }
 ```
 
 #### GET /v1/profile/user/:userId
+
 Get enhanced profile for any user (combines profile + auth service data).
 
 **Authentication:** Required
 
 **Parameters:**
+
 - `userId` (string): Target user ID
 
 **Response:**
+
 ```json
 {
   "profile": {
@@ -179,11 +195,13 @@ Get enhanced profile for any user (combines profile + auth service data).
 ### 3. Personal Projects
 
 #### GET /v1/profile/me/projects
+
 Get current user's personal projects.
 
 **Authentication:** Required
 
 **Response:**
+
 ```json
 {
   "projects": [
@@ -202,15 +220,20 @@ Get current user's personal projects.
 ```
 
 <<<<<<< HEAD
+
 #### POST /v1/profile/projects
+
 =======
+
 #### POST /v1/profiles/me/projects
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Create a new personal project.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Create a new personal project.
 
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "title": "New Project",
@@ -222,6 +245,7 @@ Create a new personal project.
 ```
 
 **Response:**
+
 ```json
 {
   "project": {
@@ -235,18 +259,24 @@ Create a new personal project.
 ```
 
 <<<<<<< HEAD
+
 #### PUT /v1/profile/projects/:id
+
 =======
+
 #### PUT /v1/profiles/me/projects/:id
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Update a personal project.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Update a personal project.
 
 **Authentication:** Required (must own the project)
 
 **Parameters:**
+
 - `id` (string): Project ID
 
 **Request Body:**
+
 ```json
 {
   "title": "Updated Project Title",
@@ -255,18 +285,24 @@ Update a personal project.
 ```
 
 <<<<<<< HEAD
+
 #### DELETE /v1/profile/projects/:id
+
 =======
+
 #### DELETE /v1/profiles/me/projects/:id
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Delete a personal project.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Delete a personal project.
 
 **Authentication:** Required (must own the project)
 
 **Parameters:**
+
 - `id` (string): Project ID
 
 **Response:**
+
 ```json
 {
   "success": true
@@ -274,15 +310,19 @@ Delete a personal project.
 ```
 
 <<<<<<< HEAD
+
 #### GET /v1/profile/projects/:userId
+
 Get personal projects for a specific user.
 
 **Authentication:** Required
 
 **Parameters:**
+
 - `userId` (string): Target user ID
 
 **Response:**
+
 ```json
 {
   "projects": [
@@ -301,18 +341,22 @@ Get personal projects for a specific user.
 ```
 
 =======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
 ---
 
 ### 4. Publications (Faculty Only)
 
 #### GET /v1/profile/me/publications
+
 Get current user's publications.
 
 **Authentication:** Required
 **Roles:** FACULTY, HEAD_ADMIN
 
 **Response:**
+
 ```json
 {
   "publications": [
@@ -329,16 +373,21 @@ Get current user's publications.
 ```
 
 <<<<<<< HEAD
+
 #### POST /v1/profile/publications
+
 =======
+
 #### POST /v1/profiles/me/publications
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Create a new publication.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Create a new publication.
 
 **Authentication:** Required
 **Roles:** FACULTY, HEAD_ADMIN
 
 **Request Body:**
+
 ```json
 {
   "title": "AI in Education",
@@ -348,35 +397,47 @@ Create a new publication.
 ```
 
 <<<<<<< HEAD
+
 #### PUT /v1/profile/publications/:id
+
 =======
+
 #### PUT /v1/profiles/me/publications/:id
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Update a publication.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Update a publication.
 
 **Authentication:** Required (must own the publication)
 **Roles:** FACULTY, HEAD_ADMIN
 
 <<<<<<< HEAD
+
 #### DELETE /v1/profile/publications/:id
+
 =======
+
 #### DELETE /v1/profiles/me/publications/:id
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Delete a publication.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Delete a publication.
 
 **Authentication:** Required (must own the publication)
 **Roles:** FACULTY, HEAD_ADMIN
 
 <<<<<<< HEAD
+
 #### GET /v1/profile/publications/:userId
+
 Get publications for a specific user.
 
 **Authentication:** Required
 
 **Parameters:**
+
 - `userId` (string): Target user ID
 
 **Response:**
+
 ```json
 {
   "publications": [
@@ -393,17 +454,21 @@ Get publications for a specific user.
 ```
 
 =======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
 ---
 
 ### 5. Experience Management
 
 #### GET /v1/profile/me/experiences
+
 Get current user's experiences.
 
 **Authentication:** Required
 
 **Response:**
+
 ```json
 {
   "experiences": [
@@ -421,11 +486,13 @@ Get current user's experiences.
 ```
 
 #### POST /v1/profile/experiences
+
 Create a new experience.
 
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "area": "Artificial Intelligence",
@@ -436,11 +503,13 @@ Create a new experience.
 ```
 
 #### PUT /v1/profile/experiences/:id
+
 Update an experience.
 
 **Authentication:** Required (must own the experience)
 
 #### DELETE /v1/profile/experiences/:id
+
 Delete an experience.
 
 **Authentication:** Required (must own the experience)
@@ -450,18 +519,23 @@ Delete an experience.
 ### 6. Badge System
 
 <<<<<<< HEAD
+
 #### GET /v1/badges/definitions
+
 Get all badge definitions.
 
-**Authentication:** Required
-=======
+# **Authentication:** Required
+
 #### GET /v1/badge-definitions
+
 Get all badge definitions.
 
 **Authentication:** None required (public endpoint)
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
 
 **Response:**
+
 ```json
 {
   "badgeDefinitions": [
@@ -480,16 +554,21 @@ Get all badge definitions.
 ```
 
 <<<<<<< HEAD
+
 #### POST /v1/badges/definitions
+
 =======
+
 #### POST /v1/badge-definitions
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Create a new badge definition.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Create a new badge definition.
 
 **Authentication:** Required
 **Roles:** FACULTY, DEPT_ADMIN, HEAD_ADMIN
 
 **Request Body:**
+
 ```json
 {
   "name": "Innovation Award",
@@ -502,16 +581,20 @@ Create a new badge definition.
 ```
 
 <<<<<<< HEAD
+
 #### GET /v1/badges/recent
+
 Get recent badge awards (for faculty/admin).
 
 **Authentication:** Required
 **Roles:** FACULTY, DEPT_ADMIN, HEAD_ADMIN
 
 **Query Parameters:**
+
 - `limit` (optional): Number of results (default: 20)
 
 **Response:**
+
 ```json
 {
   "awards": [
@@ -535,31 +618,38 @@ Get recent badge awards (for faculty/admin).
 ```
 
 #### POST /v1/badges/awards
+
 =======
+
 #### POST /v1/badges/award
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-Award a badge to a user.
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > Award a badge to a user.
 
 **Authentication:** Required
 **Roles:** FACULTY, DEPT_ADMIN, HEAD_ADMIN
 
 **Request Body:**
+
 ```json
 {
   "badgeDefinitionId": "badge_def_id",
-  "userId": "user_id", 
+  "userId": "user_id",
   "reason": "Excellent performance in hackathon"
 }
 ```
 
 <<<<<<< HEAD
+
 #### GET /v1/badges/export
+
 Export badge awards as CSV.
 
 **Authentication:** Required
 **Roles:** DEPT_ADMIN, HEAD_ADMIN
 
 **Response:** CSV file download with headers:
+
 - College Member ID
 - Student Name
 - Department
@@ -571,8 +661,10 @@ Export badge awards as CSV.
 - Reason
 
 =======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-**Response:**
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > **Response:**
+
 ```json
 {
   "badge": {
@@ -597,14 +689,17 @@ Export badge awards as CSV.
 ### 7. Getting User Badges
 
 #### GET /v1/profile/badges/:userId
+
 Get badges awarded to a specific user.
 
 **Authentication:** Required
 
 **Parameters:**
+
 - `userId` (string): Target user ID
 
 **Response:**
+
 ```json
 {
   "badges": [
@@ -639,12 +734,14 @@ Get badges awarded to a specific user.
 ### 7. Admin Endpoints
 
 #### GET /v1/profiles
+
 List all profiles with filtering (Admin only).
 
 **Authentication:** Required
 **Roles:** HEAD_ADMIN, SUPER_ADMIN
 
 **Query Parameters:**
+
 - `page` (number): Page number (default: 1)
 - `limit` (number): Items per page (default: 10)
 - `search` (string): Search by name or email
@@ -652,6 +749,7 @@ List all profiles with filtering (Admin only).
 - `college` (string): Filter by college
 
 **Response:**
+
 ```json
 {
   "profiles": [...],
@@ -679,6 +777,7 @@ All endpoints return consistent error responses:
 ```
 
 ### Common HTTP Status Codes:
+
 - `200` - Success
 - `201` - Created
 - `400` - Bad Request (validation errors)
@@ -692,6 +791,7 @@ All endpoints return consistent error responses:
 ## Data Models
 
 ### Profile
+
 ```typescript
 interface Profile {
   id: string;
@@ -713,6 +813,7 @@ interface Profile {
 ```
 
 ### PersonalProject
+
 ```typescript
 interface PersonalProject {
   id: string;
@@ -727,6 +828,7 @@ interface PersonalProject {
 ```
 
 ### Publication
+
 ```typescript
 interface Publication {
   id: string;
@@ -739,12 +841,13 @@ interface Publication {
 ```
 
 ### Experience
+
 ```typescript
 interface Experience {
   id: string;
   userId: string;
   area: string;
-  level: 'Beginner' | 'Intermediate' | 'Advanced' | 'Expert';
+  level: "Beginner" | "Intermediate" | "Advanced" | "Expert";
   yearsExp?: number;
   description?: string;
   createdAt: Date;
@@ -753,6 +856,7 @@ interface Experience {
 ```
 
 ### BadgeDefinition
+
 ```typescript
 interface BadgeDefinition {
   id: string;
@@ -761,12 +865,13 @@ interface BadgeDefinition {
   iconUrl?: string;
   color?: string;
   category?: string;
-  rarity: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+  rarity: "COMMON" | "UNCOMMON" | "RARE" | "EPIC" | "LEGENDARY";
   createdAt: Date;
 }
 ```
 
 ### StudentBadge
+
 ```typescript
 interface StudentBadge {
   id: string;

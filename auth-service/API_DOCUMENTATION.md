@@ -3,6 +3,7 @@
 This document provides comprehensive documentation for the Auth Service APIs including authentication and college management endpoints.
 
 ## Base URL
+
 ```
 http://localhost:4001
 ```
@@ -10,11 +11,13 @@ http://localhost:4001
 ## Authentication APIs
 
 ### 1. Register User
+
 **POST** `/v1/auth/register`
 
 Creates a new user account with college and department validation.
 
 **Request Body:**
+
 ```json
 {
   "displayName": "John Doe",
@@ -29,6 +32,7 @@ Creates a new user account with college and department validation.
 ```
 
 **Response (201):**
+
 ```json
 {
   "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -43,6 +47,7 @@ Creates a new user account with college and department validation.
 ```
 
 **Validation Rules:**
+
 - Email must be unique
 - College must exist and be active
 - Department must exist in the selected college
@@ -50,18 +55,21 @@ Creates a new user account with college and department validation.
 - collegeMemberId must be unique within the college (if provided)
 
 **Available Roles:**
+
 - `STUDENT`
-- `FACULTY` 
+- `FACULTY`
 - `DEPT_ADMIN`
 - `PLACEMENTS_ADMIN`
 - `HEAD_ADMIN`
 
 ### 2. Login User
+
 **POST** `/v1/auth/login`
 
 Authenticates a user and returns access token.
 
 **Request Body:**
+
 ```json
 {
   "email": "john.doe@example.com",
@@ -70,6 +78,7 @@ Authenticates a user and returns access token.
 ```
 
 **Response (200):**
+
 ```json
 {
   "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -84,16 +93,19 @@ Authenticates a user and returns access token.
 ```
 
 ### 3. Get Current User
+
 **GET** `/v1/auth/me`
 
 Returns current authenticated user information.
 
 **Headers:**
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 **Response (200):**
+
 ```json
 {
   "id": "clxxxxx",
@@ -109,11 +121,13 @@ Authorization: Bearer <access_token>
 ```
 
 ### 4. Refresh Token
+
 **POST** `/v1/auth/refresh`
 
 Refreshes the access token using the refresh token cookie.
 
 **Response (200):**
+
 ```json
 {
   "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -121,16 +135,19 @@ Refreshes the access token using the refresh token cookie.
 ```
 
 ### 5. Logout
+
 **POST** `/v1/auth/logout`
 
 Logs out the user and invalidates the refresh token.
 
 **Headers:**
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "Logged out successfully"
@@ -138,11 +155,13 @@ Authorization: Bearer <access_token>
 ```
 
 ### 6. Forgot Password
+
 **POST** `/v1/auth/forgot-password`
 
 Sends a password reset email to the user.
 
 **Request Body:**
+
 ```json
 {
   "email": "john.doe@example.com"
@@ -150,6 +169,7 @@ Sends a password reset email to the user.
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "Password reset email sent"
@@ -157,11 +177,13 @@ Sends a password reset email to the user.
 ```
 
 ### 7. Reset Password
+
 **POST** `/v1/auth/reset-password`
 
 Resets the user's password using a reset token.
 
 **Request Body:**
+
 ```json
 {
   "token": "reset_token_here",
@@ -170,6 +192,7 @@ Resets the user's password using a reset token.
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "Password reset successfully"
@@ -177,11 +200,13 @@ Resets the user's password using a reset token.
 ```
 
 ### 8. Verify Email
+
 **POST** `/v1/auth/verify-email`
 
 Verifies a user's email address using a verification token.
 
 **Request Body:**
+
 ```json
 {
   "token": "verification_token_here"
@@ -189,6 +214,7 @@ Verifies a user's email address using a verification token.
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "Email verified successfully"
@@ -196,11 +222,13 @@ Verifies a user's email address using a verification token.
 ```
 
 ### 9. Resend Verification Email
+
 **POST** `/v1/auth/resend-verification`
 
 Resends the email verification email.
 
 **Request Body:**
+
 ```json
 {
   "email": "john.doe@example.com"
@@ -208,6 +236,7 @@ Resends the email verification email.
 ```
 
 **Response (200):**
+
 ```json
 {
   "message": "Verification email sent"
@@ -215,11 +244,13 @@ Resends the email verification email.
 ```
 
 ### 10. OAuth Exchange
+
 **POST** `/v1/auth/oauth/exchange`
 
 Exchanges OAuth provider tokens for application tokens.
 
 **Request Body:**
+
 ```json
 {
   "provider": "google",
@@ -228,6 +259,7 @@ Exchanges OAuth provider tokens for application tokens.
 ```
 
 **Response (200):**
+
 ```json
 {
   "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -242,23 +274,28 @@ Exchanges OAuth provider tokens for application tokens.
 ```
 
 **Supported Providers:**
+
 - `google`
 - `github`
 
 <<<<<<< HEAD
+
 ## User Management APIs
 
 ### 11. Update User Profile
+
 **PUT** `/v1/users/:userId`
 
 Updates user profile information including displayName, avatarUrl, year, and department.
 
 **Request Headers:**
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 **Request Body:**
+
 ```json
 {
   "displayName": "John Smith",
@@ -269,6 +306,7 @@ Authorization: Bearer <access_token>
 ```
 
 **Response (200):**
+
 ```json
 {
   "id": "clxxxxx",
@@ -285,6 +323,7 @@ Authorization: Bearer <access_token>
 ```
 
 **Validation Rules:**
+
 - Only the user themselves or admins can update user profiles
 - Year must be between 1-6 for students
 - Department must exist in the user's college
@@ -292,25 +331,31 @@ Authorization: Bearer <access_token>
 - avatarUrl must be a valid URL
 
 =======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
 ## College Management APIs
 
 ### 1. List Colleges
+
 **GET** `/v1/colleges`
 
 Returns a paginated list of colleges (public endpoint).
 
 **Query Parameters:**
+
 - `active` (optional): "true" or "false" to filter by active status
 - `limit` (optional): Number of results (max 100, default 50)
 - `offset` (optional): Number of results to skip (default 0)
 
 **Example Request:**
+
 ```
 GET /v1/colleges?active=true&limit=10&offset=0
 ```
 
 **Response (200):**
+
 ```json
 {
   "colleges": [
@@ -336,16 +381,19 @@ GET /v1/colleges?active=true&limit=10&offset=0
 ```
 
 ### 2. Get College by ID
+
 **GET** `/v1/colleges/:id`
 
 Returns details of a specific college (public endpoint).
 
 **Example Request:**
+
 ```
 GET /v1/colleges/clxxxxx
 ```
 
 **Response (200):**
+
 ```json
 {
   "id": "clxxxxx",
@@ -366,16 +414,19 @@ GET /v1/colleges/clxxxxx
 ```
 
 ### 3. Create College
+
 **POST** `/v1/colleges`
 
 Creates a new college (HEAD_ADMIN only).
 
 **Headers:**
+
 ```
 Authorization: Bearer <head_admin_access_token>
 ```
 
 **Request Body:**
+
 ```json
 {
   "name": "MIT College of Engineering",
@@ -393,6 +444,7 @@ Authorization: Bearer <head_admin_access_token>
 ```
 
 **Response (201):**
+
 ```json
 {
   "id": "clxxxxx",
@@ -413,16 +465,19 @@ Authorization: Bearer <head_admin_access_token>
 ```
 
 ### 4. Update College
+
 **PUT** `/v1/colleges/:id`
 
 Updates an existing college (HEAD_ADMIN only).
 
 **Headers:**
+
 ```
 Authorization: Bearer <head_admin_access_token>
 ```
 
 **Request Body (all fields optional):**
+
 ```json
 {
   "name": "MIT College of Engineering - Updated",
@@ -438,6 +493,7 @@ Authorization: Bearer <head_admin_access_token>
 ```
 
 **Response (200):**
+
 ```json
 {
   "id": "clxxxxx",
@@ -459,11 +515,13 @@ Authorization: Bearer <head_admin_access_token>
 ```
 
 ### 5. Delete College
+
 **DELETE** `/v1/colleges/:id`
 
 Deletes a college (HEAD_ADMIN only). Cannot delete if college has users.
 
 **Headers:**
+
 ```
 Authorization: Bearer <head_admin_access_token>
 ```
@@ -472,6 +530,7 @@ Authorization: Bearer <head_admin_access_token>
 No content
 
 **Error Response (409) - College has users:**
+
 ```json
 {
   "message": "Cannot delete college with existing users"
@@ -479,16 +538,19 @@ No content
 ```
 
 ### 6. Get College Departments
+
 **GET** `/v1/colleges/:id/departments`
 
 Returns the list of departments for a specific college (public endpoint).
 
 **Example Request:**
+
 ```
 GET /v1/colleges/clxxxxx/departments
 ```
 
 **Response (200):**
+
 ```json
 {
   "departments": [
@@ -505,6 +567,7 @@ GET /v1/colleges/clxxxxx/departments
 All endpoints may return the following error responses:
 
 ### 400 Bad Request
+
 ```json
 {
   "message": "Invalid request data"
@@ -512,6 +575,7 @@ All endpoints may return the following error responses:
 ```
 
 ### 401 Unauthorized
+
 ```json
 {
   "message": "Unauthorized"
@@ -519,6 +583,7 @@ All endpoints may return the following error responses:
 ```
 
 ### 403 Forbidden
+
 ```json
 {
   "message": "Insufficient permissions - HEAD_ADMIN required"
@@ -526,6 +591,7 @@ All endpoints may return the following error responses:
 ```
 
 ### 404 Not Found
+
 ```json
 {
   "message": "Resource not found"
@@ -533,6 +599,7 @@ All endpoints may return the following error responses:
 ```
 
 ### 409 Conflict
+
 ```json
 {
   "message": "Email already in use"
@@ -540,6 +607,7 @@ All endpoints may return the following error responses:
 ```
 
 ### 500 Internal Server Error
+
 ```json
 {
   "message": "Internal server error"
@@ -564,9 +632,11 @@ All endpoints may return the following error responses:
 - CORS configured for frontend domains
 
 <<<<<<< HEAD
+
 ## JWT Token Structure
 
 ### Access Token Claims
+
 ```json
 {
   "sub": "user_id",
@@ -586,6 +656,7 @@ All endpoints may return the following error responses:
 ```
 
 ### Token Validation
+
 - **Algorithm**: RS256
 - **Public Key**: Available at `/.well-known/jwks.json`
 - **Expiry**: 1 hour for access tokens
@@ -593,16 +664,18 @@ All endpoints may return the following error responses:
 
 ## Rate Limiting
 
-| Endpoint | Rate Limit | Window |
-|----------|------------|--------|
-| `/v1/auth/login` | 5 requests | 15 minutes |
-| `/v1/auth/register` | 3 requests | 15 minutes |
-| `/v1/auth/forgot-password` | 3 requests | 15 minutes |
-| `/v1/auth/resend-verification` | 3 requests | 15 minutes |
-| All other endpoints | 100 requests | 15 minutes |
+| Endpoint                       | Rate Limit   | Window     |
+| ------------------------------ | ------------ | ---------- |
+| `/v1/auth/login`               | 5 requests   | 15 minutes |
+| `/v1/auth/register`            | 3 requests   | 15 minutes |
+| `/v1/auth/forgot-password`     | 3 requests   | 15 minutes |
+| `/v1/auth/resend-verification` | 3 requests   | 15 minutes |
+| All other endpoints            | 100 requests | 15 minutes |
 
 =======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
 ## Development Notes
 
 ### TypeScript Type Issues
@@ -611,28 +684,42 @@ When working with Prisma nullable fields and function parameters, be aware of ty
 
 **Issue**: Prisma nullable fields (`String?`) return `string | null`, but functions expecting optional parameters use `string | undefined`.
 
-<<<<<<< HEAD
-=======
+# <<<<<<< HEAD
+
 **Example Problem**:
+
 ```typescript
 // Prisma schema: collegeId String?
 // Function signature: canCreateRole(userRoles: string[], targetRole: string, userCollegeId?: string, targetCollegeId?: string)
 
 // This causes TypeScript error:
-canCreateRole(adminUser.roles, data.roles[0], adminUser.collegeId, data.collegeId)
+canCreateRole(
+  adminUser.roles,
+  data.roles[0],
+  adminUser.collegeId,
+  data.collegeId
+);
 // Error: Argument of type 'string | null' is not assignable to parameter of type 'string | undefined'
 ```
 
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-**Solution**: Use nullish coalescing to convert `null` to `undefined`:
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4
+> > > > > > > **Solution**: Use nullish coalescing to convert `null` to `undefined`:
+
 ```typescript
-canCreateRole(adminUser.roles, data.roles[0], adminUser.collegeId ?? undefined, data.collegeId)
+canCreateRole(
+  adminUser.roles,
+  data.roles[0],
+  adminUser.collegeId ?? undefined,
+  data.collegeId
+);
 ```
 
 <<<<<<< HEAD
+
 ### Email Configuration
 
 For development, if `SMTP_HOST` is not configured, the service uses Ethereal Email:
+
 - Test emails are captured and viewable via debug URLs
 - Response includes `debugPreviewUrl` for easy email testing
 - Production should use real SMTP configuration
@@ -640,18 +727,21 @@ For development, if `SMTP_HOST` is not configured, the service uses Ethereal Ema
 ## Development Setup
 
 1. **Environment Setup**
+
 ```bash
 cp .env.example .env
 # Configure DATABASE_URL, JWT keys, and optional SMTP
 ```
 
 2. **Generate RSA Keys**
+
 ```bash
 npx tsx scripts/generate-keys.ts
 # Copy output to .env AUTH_JWT_* variables
 ```
 
 3. **Database Setup**
+
 ```bash
 npm install
 npx prisma generate
@@ -659,17 +749,18 @@ npx prisma migrate dev --name init
 ```
 
 4. **Start Server**
+
 ```bash
 npm run dev
 ```
 
 **Service URLs:**
+
 - API: http://localhost:4001
 - Swagger Documentation: http://localhost:4001/docs
 - JWKS Endpoint: http://localhost:4001/.well-known/jwks.json
-- Health Check: http://localhost:4001/health
-=======
-This pattern applies to any Prisma nullable field being passed to functions expecting optional parameters.
+- # Health Check: http://localhost:4001/health
+  This pattern applies to any Prisma nullable field being passed to functions expecting optional parameters.
 
 ## Development Setup
 
@@ -679,4 +770,5 @@ This pattern applies to any Prisma nullable field being passed to functions expe
 4. Start server: `npm run dev`
 
 Server runs on `http://localhost:4001` with Swagger docs at `/docs`.
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
+
+> > > > > > > 091fbe9419d7afb4051128fac039f76cbc90d0b4

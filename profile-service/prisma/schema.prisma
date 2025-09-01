@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -10,26 +10,23 @@ datasource db {
 }
 
 model Profile {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  name             String?  // Editable display name (separate from auth displayName)
-  bio              String?
-  skills           String[] // For students
-<<<<<<< HEAD
-  expertise        String[] // For faculty
-=======
->>>>>>> 091fbe9419d7afb4051128fac039f76cbc90d0b4
-  linkedIn         String?
-  github           String?  // For students
-  twitter          String?  // For faculty
-  resumeUrl        String?  // For students
-  avatar           String?
-  contactInfo      String?
-  phoneNumber      String?
-  alternateEmail   String?  // For students
-  experiences      Experience[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  name           String? // Editable display name (separate from auth displayName)
+  bio            String?
+  skills         String[] // For students
+  expertise      String[] // For faculty
+  linkedIn       String?
+  github         String? // For students
+  twitter        String? // For faculty
+  resumeUrl      String? // For students
+  avatar         String?
+  contactInfo    String?
+  phoneNumber    String?
+  alternateEmail String? // For students
+  experiences    Experience[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   publications     Publication[]
   personalProjects PersonalProject[]
@@ -39,14 +36,14 @@ model Profile {
 model Experience {
   id          String   @id @default(cuid())
   profileId   String
-  area        String   // AI, IoT, Machine Learning, etc.
-  level       String   // Beginner, Intermediate, Advanced, Expert
-  yearsExp    Int?     // years of experience in this area
+  area        String // AI, IoT, Machine Learning, etc.
+  level       String // Beginner, Intermediate, Advanced, Expert
+  yearsExp    Int? // years of experience in this area
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([profileId])
 }
@@ -59,7 +56,7 @@ model Publication {
   year      Int
   createdAt DateTime @default(now())
 
-  profile   Profile  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   @@index([userId])
   @@index([year])
@@ -75,7 +72,7 @@ model PersonalProject {
   image       String?
   createdAt   DateTime @default(now())
 
-  profile     Profile  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -87,16 +84,16 @@ model BadgeDefinition {
   description String
   icon        String?
   color       String?
-  category    String?  // LEADERSHIP, TECHNICAL, COMMUNITY, RESEARCH, PRESENTATION, COLLABORATION, INNOVATION, IMPACT
-  rarity      String   // COMMON, RARE, EPIC, LEGENDARY
+  category    String? // LEADERSHIP, TECHNICAL, COMMUNITY, RESEARCH, PRESENTATION, COLLABORATION, INNOVATION, IMPACT
+  rarity      String // COMMON, RARE, EPIC, LEGENDARY
   criteria    String?
   points      Int      @default(10)
   isActive    Boolean  @default(true)
-  collegeId   String?  // null = global badge, otherwise college-specific
+  collegeId   String? // null = global badge, otherwise college-specific
   createdAt   DateTime @default(now())
   createdBy   String?
 
-  awards      StudentBadge[]
+  awards StudentBadge[]
 
   @@unique([name, collegeId])
 }
@@ -117,21 +114,21 @@ model StudentBadge {
   badge   BadgeDefinition @relation(fields: [badgeId], references: [id])
   student Profile         @relation(fields: [studentId], references: [userId], onDelete: Cascade)
 
+  @@unique([badgeId, studentId]) // One badge per user
   @@index([studentId])
   @@index([badgeId])
   @@index([awardedBy])
   @@index([awardedAt])
-  @@unique([badgeId, studentId]) // One badge per user
 }
 
 // Badge policies for event creation eligibility
 model BadgePolicy {
-  id                    String  @id @default(cuid())
-  collegeId             String  @unique
+  id                    String   @id @default(cuid())
+  collegeId             String   @unique
   departmentId          String?
-  eventCreationRequired Int     @default(8) // badges required for event creation
-  categoryDiversityMin  Int     @default(4) // minimum categories required
-  isActive              Boolean @default(true)
+  eventCreationRequired Int      @default(8) // badges required for event creation
+  categoryDiversityMin  Int      @default(4) // minimum categories required
+  isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
