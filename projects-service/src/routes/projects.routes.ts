@@ -22,11 +22,15 @@ export default async function projectsRoutes(app: FastifyInstance) {
       response: { 200: z.any() },
     },
   }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    const { collegeId, department } = await getUserScope(req, payload);
-    const roles = (payload.roles || []) as string[];
-    const isStudent = roles.includes("STUDENT");
-    const isFaculty = roles.includes("FACULTY");
+    try {
+      const payload = await requireAuth(req);
+      const { collegeId, department } = await getUserScope(req, payload);
+      const roles = (payload.roles || []) as string[];
+      const isStudent = roles.includes("STUDENT");
+      const isFaculty = roles.includes("FACULTY");
+    
+    // Debug logging for department filtering
+    console.log(`[DEBUG] User ${payload.sub} - collegeId: ${collegeId}, department: ${department}, roles: ${roles.join(',')}, isStudent: ${isStudent}`);
 
     const { q, projectType, progressStatus } = (req.query as any) as {
       q?: string; projectType?: string; progressStatus?: string; page?: number; limit?: number;
@@ -35,8 +39,14 @@ export default async function projectsRoutes(app: FastifyInstance) {
     const limit = Math.min(100, Math.max(1, Number((req.query as any).limit || 20)));
 
     const andConditions: any[] = [
-      { collegeId, archivedAt: null },
+      { archivedAt: null },
     ];
+    
+    // Only add collegeId filter if it's defined
+    if (collegeId) {
+      andConditions.push({ collegeId });
+    }
+    
     if (projectType) andConditions.push({ projectType });
     if (progressStatus) andConditions.push({ progressStatus });
     if (q) andConditions.push({ OR: [
@@ -45,10 +55,18 @@ export default async function projectsRoutes(app: FastifyInstance) {
     ] });
     if (isStudent) {
       andConditions.push({ moderationStatus: "APPROVED" });
-      andConditions.push({ OR: [
-        { visibleToAllDepts: true },
-        { departments: { has: department } },
-      ] });
+      
+      // Students can see projects that are visible to all departments
+      // If they have a department, they can also see department-specific projects
+      if (department) {
+        andConditions.push({ OR: [
+          { visibleToAllDepts: true },
+          { departments: { has: department } },
+        ] });
+      } else {
+        // Students without department can only see projects visible to all departments
+        andConditions.push({ visibleToAllDepts: true });
+      }
     }
     // Faculty can see all projects within college (including pending); others same visibility as students
 
@@ -93,6 +111,13 @@ export default async function projectsRoutes(app: FastifyInstance) {
       acceptedStudentsCount: countsByProjectId[p.id] || 0,
     }));
     return reply.send({ projects: projectsOut, page, total });
+    } catch (error: any) {
+      console.error('[ERROR] Failed to fetch projects:', error);
+      return reply.code(500).send({ 
+        message: "Failed to fetch projects. Please try again later.",
+        error: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      });
+    }
   });
 
   // Get single project by ID
@@ -122,7 +147,7 @@ export default async function projectsRoutes(app: FastifyInstance) {
       if (project.moderationStatus !== "APPROVED") {
         return reply.code(404).send({ message: "Project not found" });
       }
-      if (!(project.visibleToAllDepts || project.departments.includes(department))) {
+      if (!(project.visibleToAllDepts || (department && project.departments.includes(department)))) {
         return reply.code(404).send({ message: "Project not found" });
       }
 
@@ -181,9 +206,16 @@ export default async function projectsRoutes(app: FastifyInstance) {
   app.post("/v1/projects", {
     schema: { tags: ["projects"], body: createProjectSchema, response: { 200: z.any() } },
   }, async (req: any, reply: any) => {
-    const payload = await requireAuth(req);
-    requireRole(payload, ["FACULTY"]);
-    const { collegeId, avatar: avatarFromProfile, displayName: nameFromProfile } = await getUserScope(req, payload);
+    try {
+      const payload = await requireAuth(req);
+      requireRole(payload, ["FACULTY"]);
+      const { collegeId, avatar: avatarFromProfile, displayName: nameFromProfile } = await getUserScope(req, payload);
+      
+      if (!collegeId) {
+        console.error(`[ERROR] Faculty user ${payload.sub} missing collegeId in getUserScope result`);
+        return reply.code(400).send({ message: "Your profile is incomplete. Please contact admin to set your college affiliation." });
+      }
+    
     const body = createProjectSchema.parse((req as any).body);
     if (!body.visibleToAllDepts && (!body.departments || body.departments.length === 0)) {
       return reply.code(400).send({ message: "Specify at least one department when visibleToAllDepts=false" });
@@ -223,6 +255,13 @@ export default async function projectsRoutes(app: FastifyInstance) {
     });
 
     return reply.send({ project: created });
+    } catch (error: any) {
+      console.error('[ERROR] Failed to create project:', error);
+      return reply.code(500).send({ 
+        message: "Failed to create project. Please try again later.",
+        error: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      });
+    }
   });
 
   // Update project (FACULTY owner)
@@ -266,11 +305,15 @@ export default async function projectsRoutes(app: FastifyInstance) {
     const { collegeId, department, displayName: nameFromProfile } = await getUserScope(req, payload);
     const body = applyProjectSchema.parse((req as any).body);
 
+    if (!collegeId) {
+      return reply.code(400).send({ message: "College ID is required to apply to projects" });
+    }
+    
     const project = await prisma.project.findFirst({ where: { id, collegeId, archivedAt: null } });
     if (!project) return reply.code(404).send({ message: "Project not found" });
     if (project.moderationStatus !== "APPROVED") return reply.code(403).send({ message: "Project not open for applications" });
     if (project.progressStatus === "COMPLETED") return reply.code(400).send({ message: "Project already completed" });
-    if (!(project.visibleToAllDepts || project.departments.includes(department))) {
+    if (!(project.visibleToAllDepts || (department && project.departments.includes(department)))) {
       return reply.code(403).send({ message: "Not visible to your department" });
     }
     if (project.deadline && new Date() > project.deadline) {
@@ -285,7 +328,7 @@ export default async function projectsRoutes(app: FastifyInstance) {
         projectId: id,
         studentId: payload.sub,
         studentName: (payload.displayName ?? (payload as any).name ?? nameFromProfile ?? ""),
-        studentDepartment: department,
+        studentDepartment: department || "",
         status: "PENDING" as $Enums.ApplicationStatus,
         message: body.message ?? null,
       },
@@ -296,7 +339,7 @@ export default async function projectsRoutes(app: FastifyInstance) {
       type: 'new-application',
       application: created,
       projectId: id,
-      collegeId: collegeId,
+      collegeId,
     }, project.authorId);
 
     return reply.send({ application: created });

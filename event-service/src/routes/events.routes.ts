@@ -725,6 +725,34 @@ export default async function eventsRoutes(app: FastifyInstance) {
     return reply.send({ events: augmented });
   });
 
+  // My registrations (only events user is registered for, not authored)
+  app.get("/v1/events/registrations/mine", {
+    schema: { tags: ["events"], response: { 200: z.any() } },
+  }, async (req: any, reply: any) => {
+    const payload = await requireAuth(req);
+    
+    // Get all registrations for this user
+    const registrations = await prisma.eventRegistration.findMany({
+      where: { userId: payload.sub },
+      include: {
+        event: {
+          include: { _count: { select: { registrations: true } } }
+        }
+      },
+      orderBy: { joinedAt: "desc" }
+    });
+
+    // Transform to match EventRegistration interface
+    const formattedRegistrations = registrations.map(reg => ({
+      id: reg.id,
+      eventId: reg.eventId,
+      userId: reg.userId,
+      joinedAt: reg.joinedAt.toISOString()
+    }));
+
+    return reply.send({ registrations: formattedRegistrations });
+  });
+
   // Eligibility (student)
   app.get("/v1/events/eligibility", {
     schema: { tags: ["events"], response: { 200: z.any() } },

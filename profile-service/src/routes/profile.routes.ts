@@ -5,6 +5,55 @@ import { prisma } from "../db";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { errorResponseSchema, messageResponseSchema } from "../schemas/profile.schemas";
 
+// Badge award post creation function
+async function createBadgeAwardPost(badge: any, awardedBy: any, studentInfo: any) {
+  const networkServiceUrl = process.env.NETWORK_SERVICE_URL || 'http://localhost:4005';
+  
+  // Check if auto-post is enabled (could be a user preference or system setting)
+  const autoPostEnabled = process.env.BADGE_AUTO_POST_ENABLED !== 'false';
+  if (!autoPostEnabled) return;
+
+  const postData = {
+    type: 'BADGE_AWARD',
+    content: `🎉 Congratulations to ${studentInfo?.displayName || studentInfo?.name || 'Student'} for earning the "${badge.badge.name}" badge!\n\n${badge.reason}`,
+    visibility: 'COLLEGE',
+    badgeData: {
+      badgeId: badge.badge.id,
+      badgeName: badge.badge.name,
+      description: badge.badge.description,
+      criteria: badge.badge.criteria || badge.reason,
+      rarity: badge.badge.rarity?.toLowerCase() || 'common',
+      awardedTo: studentInfo?.displayName || studentInfo?.name || 'Student',
+      awardedToId: badge.studentId,
+      awardedAt: badge.awardedAt,
+      awardedByName: badge.awardedByName || awardedBy.displayName || awardedBy.name
+    },
+    tags: ['badge', 'achievement', badge.badge.category?.toLowerCase()].filter(Boolean)
+  };
+
+  try {
+    const response = await fetch(`${networkServiceUrl}/v1/posts/specialized`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${awardedBy.token || ''}`
+      },
+      body: JSON.stringify(postData)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Network service returned ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('Badge award post created successfully:', result.id);
+    return result;
+  } catch (error) {
+    console.error('Failed to create badge award post:', error);
+    throw error;
+  }
+}
+
 // Validation schemas
 const updateProfileSchema = z.object({
   // User model fields (displayName and avatarUrl are editable)
@@ -187,6 +236,8 @@ export default async function profileRoutes(app: FastifyInstance) {
         create: { 
           userId,
           name: userInfo.displayName,
+          skills: [],
+          expertise: [],
         },
         include: {
           personalProjects: true,
@@ -280,6 +331,8 @@ export default async function profileRoutes(app: FastifyInstance) {
       update: profileData,
       create: {
         userId,
+        skills: [],
+        expertise: [],
         ...profileData,
       },
       include: {
@@ -403,6 +456,8 @@ export default async function profileRoutes(app: FastifyInstance) {
         create: { 
           userId,
           name: userInfo.displayName,
+          skills: [],
+          expertise: [],
         },
         include: {
           personalProjects: true,
@@ -467,6 +522,8 @@ export default async function profileRoutes(app: FastifyInstance) {
       update: data,
       create: {
         userId,
+        skills: [],
+        expertise: [],
         ...data,
       },
       include: {
@@ -569,6 +626,8 @@ export default async function profileRoutes(app: FastifyInstance) {
       update: {},
       create: { 
         userId: req.user!.sub,
+        skills: [],
+        expertise: [],
       },
     });
 
@@ -662,6 +721,8 @@ export default async function profileRoutes(app: FastifyInstance) {
       update: {},
       create: { 
         userId: req.user!.sub,
+        skills: [],
+        expertise: [],
       },
     });
 
@@ -772,7 +833,11 @@ export default async function profileRoutes(app: FastifyInstance) {
     await prisma.profile.upsert({
       where: { userId },
       update: {},
-      create: { userId },
+      create: { 
+        userId,
+        skills: [],
+        expertise: [],
+      },
     });
 
     const experience = await prisma.experience.create({
@@ -892,6 +957,7 @@ export default async function profileRoutes(app: FastifyInstance) {
       create: {
         userId,
         skills: cleanedSkills,
+        expertise: [],
       },
       select: { skills: true },
     });
@@ -941,6 +1007,7 @@ export default async function profileRoutes(app: FastifyInstance) {
       create: {
         userId,
         skills: updatedSkills,
+        expertise: [],
       },
       select: { skills: true },
     });
@@ -976,11 +1043,202 @@ export default async function profileRoutes(app: FastifyInstance) {
       create: {
         userId,
         skills: updatedSkills,
+        expertise: [],
       },
       select: { skills: true },
     });
 
     return reply.send({ skills: updatedProfile.skills });
+  });
+
+  // Protected: Get users directory for network discovery
+  app.get("/v1/users", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["users"],
+      querystring: z.object({
+        offset: z.string().transform(Number).optional(),
+        limit: z.string().transform(Number).optional(),
+        search: z.string().optional(),
+        collegeId: z.string().optional(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { offset = 0, limit = 20, search, collegeId } = req.query as any;
+
+    try {
+      // Get users from auth service
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      const queryParams = new URLSearchParams();
+      queryParams.append('offset', offset.toString());
+      queryParams.append('limit', Math.min(limit, 100).toString()); // Cap at 100
+      if (search) queryParams.append('search', search);
+      if (collegeId) queryParams.append('collegeId', collegeId);
+
+      const response = await axios.get(`${authServiceUrl}/v1/users?${queryParams}`, {
+        headers: {
+          'Authorization': req.headers.authorization || '',
+        },
+        timeout: 10000,
+      });
+
+      if (!response.data || !response.data.users) {
+        return reply.send({
+          users: [],
+          nextOffset: offset,
+          hasMore: false,
+          totalCount: 0
+        });
+      }
+
+      // Enhance users with profile data
+      const enhancedUsers = await Promise.all(
+        response.data.users.map(async (user: any) => {
+          try {
+            const profile = await prisma.profile.findUnique({
+              where: { userId: user.id },
+              select: {
+                name: true,
+                bio: true,
+                skills: true,
+              },
+            });
+
+            return {
+              id: user.id,
+              name: profile?.name || user.displayName || user.name,
+              email: user.email,
+              avatarUrl: user.avatarUrl,
+              college: user.collegeName,
+              collegeId: user.collegeId,
+              department: user.department,
+              year: user.year,
+              bio: profile?.bio,
+              skills: profile?.skills || [],
+            };
+          } catch (error) {
+            console.error(`Error enhancing user ${user.id}:`, error);
+            return {
+              id: user.id,
+              name: user.displayName || user.name,
+              email: user.email,
+              avatarUrl: user.avatarUrl,
+              college: user.collegeName,
+              collegeId: user.collegeId,
+              department: user.department,
+              year: user.year,
+              bio: '',
+              skills: [],
+            };
+          }
+        })
+      );
+
+      return reply.send({
+        users: enhancedUsers,
+        nextOffset: response.data.nextOffset || offset + limit,
+        hasMore: response.data.hasMore || false,
+        totalCount: response.data.totalCount || enhancedUsers.length
+      });
+    } catch (error) {
+      console.error('Error fetching users directory:', error);
+      return reply.code(500).send({
+        message: 'Failed to fetch users directory'
+      });
+    }
+  });
+
+  // Protected: Get user suggestions for follow recommendations
+  app.get("/v1/users/suggestions", {
+    preHandler: requireAuth,
+    schema: {
+      tags: ["users"],
+      querystring: z.object({
+        userId: z.string().optional(),
+        limit: z.string().transform(Number).optional(),
+      }),
+      response: { 200: z.any() },
+    },
+  }, async (req, reply) => {
+    const { userId, limit = 10 } = req.query as any;
+    const currentUserId = userId || req.user!.sub;
+
+    try {
+      // Get user's college info for better suggestions
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+      const userResponse = await axios.get(`${authServiceUrl}/v1/users/${currentUserId}`, {
+        headers: {
+          'Authorization': req.headers.authorization || '',
+        },
+        timeout: 5000,
+      });
+
+      const currentUser = userResponse.data.user;
+      
+      // Get users from same college
+      const queryParams = new URLSearchParams();
+      queryParams.append('limit', Math.min(limit * 2, 50).toString()); // Get more to filter
+      if (currentUser?.collegeId) {
+        queryParams.append('collegeId', currentUser.collegeId);
+      }
+
+      const suggestionsResponse = await axios.get(`${authServiceUrl}/v1/users?${queryParams}`, {
+        headers: {
+          'Authorization': req.headers.authorization || '',
+        },
+        timeout: 10000,
+      });
+
+      if (!suggestionsResponse.data || !suggestionsResponse.data.users) {
+        return reply.send({ users: [] });
+      }
+
+      // Filter out current user and enhance with profile data
+      const suggestions = suggestionsResponse.data.users
+        .filter((user: any) => user.id !== currentUserId)
+        .slice(0, limit);
+
+      const enhancedSuggestions = await Promise.all(
+        suggestions.map(async (user: any) => {
+          try {
+            const profile = await prisma.profile.findUnique({
+              where: { userId: user.id },
+              select: {
+                name: true,
+                bio: true,
+                skills: true,
+              },
+            });
+
+            return {
+              id: user.id,
+              name: profile?.name || user.displayName || user.name,
+              avatarUrl: user.avatarUrl,
+              college: user.collegeName,
+              department: user.department,
+              bio: profile?.bio,
+              skills: profile?.skills || [],
+            };
+          } catch (error) {
+            return {
+              id: user.id,
+              name: user.displayName || user.name,
+              avatarUrl: user.avatarUrl,
+              college: user.collegeName,
+              department: user.department,
+              bio: '',
+              skills: [],
+            };
+          }
+        })
+      );
+
+      return reply.send({ users: enhancedSuggestions });
+    } catch (error) {
+      console.error('Error fetching user suggestions:', error);
+      return reply.send({ users: [] });
+    }
   });
 
   // Protected: Create badge definition (Faculty/Admin only)
@@ -1043,8 +1301,9 @@ export default async function profileRoutes(app: FastifyInstance) {
     console.log('Badge award request body:', JSON.stringify(req.body, null, 2));
     console.log('Validated data:', JSON.stringify(data, null, 2));
     
-    // Verify the target user exists in auth service
+    // Verify the target user exists in auth service and get user info
     const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+    let studentInfo: any = null;
     try {
       const userResponse = await axios.get(`${authServiceUrl}/v1/users/${data.userId}`, {
         headers: {
@@ -1058,6 +1317,8 @@ export default async function profileRoutes(app: FastifyInstance) {
           message: `User with ID ${data.userId} does not exist`,
         });
       }
+      
+      studentInfo = userResponse.data.user;
     } catch (error: any) {
       if (error.response?.status === 404) {
         return reply.code(404).send({
@@ -1077,6 +1338,8 @@ export default async function profileRoutes(app: FastifyInstance) {
       update: {},
       create: { 
         userId: data.userId,
+        skills: [],
+        expertise: [],
       },
     });
 
@@ -1094,6 +1357,14 @@ export default async function profileRoutes(app: FastifyInstance) {
         badge: true,
       },
     });
+
+    // Auto-create badge award post (if enabled)
+    try {
+      await createBadgeAwardPost(badge, req.user!, studentInfo);
+    } catch (error) {
+      console.error('Failed to create badge award post:', error);
+      // Don't fail the badge creation if post creation fails
+    }
 
     return reply.code(201).send({ badge });
   });
@@ -1218,8 +1489,17 @@ export default async function profileRoutes(app: FastifyInstance) {
     const { limit } = req.query as { limit?: string };
     const limitNum = limit ? parseInt(limit, 10) : 10;
     const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://localhost:4001';
+    
+    if (!req.user?.id) {
+      return reply.code(401).send({ error: "User not authenticated" });
+    }
+    const userId = req.user.id;
 
+    // Filter awards by the faculty member who awarded them
     const awards = await prisma.studentBadge.findMany({
+      where: {
+        awardedBy: userId, // Only show badges awarded by this faculty member
+      },
       take: limitNum,
       orderBy: { awardedAt: "desc" },
       include: {
@@ -1349,7 +1629,7 @@ export default async function profileRoutes(app: FastifyInstance) {
       });
 
       const activeBadges = userBadges.filter(award => award.badge.isActive);
-      const categories = [...new Set(activeBadges.map(award => award.badge.category).filter(Boolean))];
+      const categories = [...new Set(activeBadges.map(award => award.badge.category).filter((cat): cat is string => Boolean(cat)))];
       
       const canCreate = activeBadges.length >= requiredBadges && categories.length >= requiredCategories;
 
@@ -1445,4 +1725,5 @@ export default async function profileRoutes(app: FastifyInstance) {
 
     return reply.send({ policy });
   });
+
 }

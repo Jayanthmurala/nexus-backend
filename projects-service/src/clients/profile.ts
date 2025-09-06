@@ -6,7 +6,7 @@ import { getCache, CACHE_KEYS, CACHE_TTL } from "../utils/cache";
 // Cache instance
 const cache = getCache();
 
-export async function getUserScope(req: any, payload: AccessTokenPayload): Promise<{ collegeId: string; department: string; avatar?: string; displayName?: string; year?: number }> {
+export async function getUserScope(req: any, payload: AccessTokenPayload): Promise<{ collegeId?: string; department?: string; avatar?: string; displayName?: string; year?: number }> {
   const cacheKey = CACHE_KEYS.USER_SCOPE(payload.sub);
   
   // Check Redis/cache first
@@ -15,6 +15,7 @@ export async function getUserScope(req: any, payload: AccessTokenPayload): Promi
 
   // Try JWT-first approach (new tokens with profile object)
   const jwtScope = getUserScopeFromJWT(payload);
+  console.log(`[DEBUG] JWT scope for user ${payload.sub}:`, JSON.stringify(jwtScope));
   if (jwtScope.collegeId && jwtScope.department) {
     const scope = {
       collegeId: jwtScope.collegeId,
@@ -24,6 +25,7 @@ export async function getUserScope(req: any, payload: AccessTokenPayload): Promi
       avatar: (payload as any).avatarUrl || (payload as any).picture,
     };
     await setCachedScope(cacheKey, scope);
+    console.log(`[DEBUG] Using JWT scope for user ${payload.sub}:`, JSON.stringify(scope));
     return scope;
   }
 
@@ -34,6 +36,7 @@ export async function getUserScope(req: any, payload: AccessTokenPayload): Promi
   try {
     // Try auth service first for identity data
     const identity = await getUserIdentity(payload.sub, auth);
+    console.log(`[DEBUG] Auth service identity for user ${payload.sub}:`, JSON.stringify(identity));
     const scope = {
       collegeId: identity.collegeId,
       department: identity.department,
@@ -42,6 +45,7 @@ export async function getUserScope(req: any, payload: AccessTokenPayload): Promi
       avatar: identity.avatarUrl,
     };
     await setCachedScope(cacheKey, scope);
+    console.log(`[DEBUG] Using auth service scope for user ${payload.sub}:`, JSON.stringify(scope));
     return scope;
   } catch (authError) {
     console.warn("Auth service fallback failed, trying profile service:", authError);
@@ -51,17 +55,20 @@ export async function getUserScope(req: any, payload: AccessTokenPayload): Promi
       headers: { Authorization: auth },
     });
     if (!res.ok) {
-      throw new Error(`Profile service responded ${res.status}`);
+      console.warn(`Profile service responded ${res.status}, returning minimal scope`);
+      // Return minimal scope for new users without complete profiles
+      return {
+        displayName: payload.name ?? (payload as any).displayName,
+      };
     }
     const data = await res.json();
     const profile = data?.profile as { collegeId?: string; department?: string; avatar?: string } | null;
-    if (!profile?.collegeId || !profile?.department) {
-      throw new Error("Profile is missing collegeId or department");
-    }
+    
+    // Return whatever profile data is available, even if incomplete
     const scope = {
-      collegeId: profile.collegeId,
-      department: profile.department,
-      avatar: profile.avatar,
+      collegeId: profile?.collegeId,
+      department: profile?.department,
+      avatar: profile?.avatar,
       displayName: payload.name ?? (payload as any).displayName,
     };
     await setCachedScope(cacheKey, scope);

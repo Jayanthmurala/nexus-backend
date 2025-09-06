@@ -7,247 +7,205 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Visibility {
-  PUBLIC
-  COLLEGE
-}
-
-enum PostType {
-  STANDARD
-  BADGE_AWARD
-  SHARE
-  AD
-}
-
-enum ModerationStatus {
-  PENDING
-  APPROVED
-  HIDDEN
-  REJECTED
-}
-
-enum ReactionType {
-  LIKE
-}
-
-enum ConnectionRequestStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  CANCELED
-  BLOCKED
-}
-
-enum AdStatus {
-  ACTIVE
-  PAUSED
-  ENDED
-  EXHAUSTED
-}
-
 model Post {
-  id                String           @id @default(cuid())
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Post content
+  type       PostType
+  content    String?
+  visibility PostVisibility @default(PUBLIC)
+  status     PostStatus @default(PUBLISHED)
+
+  // Author info (denormalized for performance)
   authorId          String
   authorDisplayName String
   authorAvatarUrl   String?
+  authorRole        String
+  authorDepartment  String?
   authorCollegeId   String
-  visibility        Visibility
-  type              PostType
-  content           String?
-  shareOfPostId     String?
-  likeCount         Int               @default(0)
-  commentCount      Int               @default(0)
-  shareCount        Int               @default(0)
-  moderationStatus  ModerationStatus  @default(APPROVED)
-  deletedAt         DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
 
-  // Badge award payload
-  badgeAwardJson    String?
-  sourceEventId     String?
-  isContentLocked   Boolean           @default(true)
+  // Engagement metrics
+  likeCount    Int @default(0)
+  commentCount Int @default(0)
+  shareCount   Int @default(0)
+  viewCount    Int @default(0)
 
-  // AD fields
-  adCampaignId      String?
-  adMetaJson        String?
-  adTargetJson      String?
-  adBudgetJson      String?
-  adStatus          AdStatus?
+  // Type-specific data (JSON fields)
+  badgeData         Json?
+  collaborationData Json? // { skills: string[], capacity: number, deadline: string }
+  projectData       Json? // { title: string, milestone: string, progress: number, githubUrl?: string, demoUrl?: string, techStack: string[] }
+  eventData         Json? // { title: string, date: string, location: string, eventType: string, registrationRequired: boolean, capacity?: number, registrationUrl?: string }
+  jobData           Json?
 
-  media             PostMedia[]
-  reactions         Reaction[]
-  comments          Comment[]
-  bookmarks         Bookmark[]
-  tags              PostTag[]
-  links             PostLink[]
+  // Relations
+  media     PostMedia[]
+  tags      PostTag[]
+  links     PostLink[]
+  likes     PostLike[]
+  comments  PostComment[]
+  shares    PostShare[]
+  views     PostView[]
+  bookmarks PostBookmark[]
 
-  @@index([authorId, createdAt])
-  @@index([authorCollegeId, visibility, createdAt])
-  @@index([shareOfPostId])
-  @@index([type, createdAt])
-  @@index([moderationStatus, createdAt])
+  @@map("posts")
 }
 
 model PostMedia {
-  id        String   @id @default(cuid())
-  postId    String
-  mediaId   String
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
+  id     String @id @default(uuid())
+  postId String
+  mediaId String
+  order  Int    @default(0)
 
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  mediaRef  Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  media Media @relation(fields: [mediaId], references: [id])
 
   @@unique([postId, mediaId])
+  @@map("post_media")
 }
 
 model Media {
-  id           String   @id @default(cuid())
-  ownerUserId  String
-  storageKey   String
-  url          String
-  mimeType     String
-  sizeBytes    Int
-  width        Int?
-  height       Int?
-  blurhash     String?
-  createdAt    DateTime @default(now())
-
-  postMedia    PostMedia[]
-
-  @@index([ownerUserId, createdAt])
-}
-
-model Reaction {
-  id        String       @id @default(cuid())
-  postId    String
-  userId    String
-  type      ReactionType
-  createdAt DateTime     @default(now())
-
-  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@unique([postId, userId, type])
-  @@index([postId, createdAt])
-}
-
-model Comment {
-  id               String           @id @default(cuid())
-  postId           String
-  userId           String
-  userDisplayName  String
-  userAvatarUrl    String?
-  userCollegeId    String
-  content          String
-  moderationStatus ModerationStatus @default(APPROVED)
-  deletedAt        DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-
-  post             Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@index([postId, createdAt])
-  @@index([userId, createdAt])
-}
-
-model Follow {
-  followerId String
-  followeeId String
-  createdAt  DateTime @default(now())
-
-  @@id([followerId, followeeId])
-  @@index([followeeId, createdAt])
-}
-
-model ConnectionRequest {
-  id           String                  @id @default(cuid())
-  requesterId  String
-  addresseeId  String
-  status       ConnectionRequestStatus @default(PENDING)
-  note         String?
-  createdAt    DateTime                @default(now())
-  decidedAt    DateTime?
-
-  @@index([requesterId, createdAt])
-  @@index([addresseeId, createdAt])
-}
-
-model Connection {
-  userA     String
-  userB     String
+  id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  @@id([userA, userB])
-}
+  url       String
+  mimeType  String
+  sizeBytes Int
+  width     Int?
+  height    Int?
+  
+  // Upload info
+  storageKey String
+  ownerUserId String
 
-model AdImpression {
-  id        String   @id @default(cuid())
-  postId    String
-  userId    String
-  createdAt DateTime @default(now())
+  // Relations
+  posts PostMedia[]
 
-  @@index([postId, createdAt])
-  @@index([userId, createdAt])
-}
-
-model AdClick {
-  id        String   @id @default(cuid())
-  postId    String
-  userId    String
-  createdAt DateTime @default(now())
-
-  @@index([postId, createdAt])
-  @@index([userId, createdAt])
-}
-
-model Bookmark {
-  id        String   @id @default(cuid())
-  postId    String
-  userId    String
-  createdAt DateTime @default(now())
-
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@unique([postId, userId])
-  @@index([postId, createdAt])
-}
-
-model Message {
-  id         String    @id @default(cuid())
-  senderId   String
-  receiverId String
-  content    String
-  type       String    @default("text")
-  readAt     DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  @@index([senderId, receiverId, createdAt])
-  @@index([receiverId, readAt])
+  @@map("media")
 }
 
 model PostTag {
-  id        String   @id @default(cuid())
-  postId    String
-  tag       String
-  createdAt DateTime @default(now())
+  id     String @id @default(uuid())
+  postId String
+  tag    String
 
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([postId, tag])
-  @@index([tag])
+  @@map("post_tags")
 }
 
 model PostLink {
-  id        String   @id @default(cuid())
+  id     String @id @default(uuid())
+  postId String
+  url    String
+  title  String?
+  order  Int    @default(0)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("post_links")
+}
+
+model PostLike {
+  id       String   @id @default(uuid())
+  postId   String
+  userId   String
+  likedAt  DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("post_likes")
+}
+
+model PostComment {
+  id        String   @id @default(uuid())
   postId    String
-  url       String
-  title     String?
-  order     Int      @default(0)
+  userId    String
+  content   String
   createdAt DateTime @default(now())
 
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  // User info (denormalized)
+  userDisplayName String
+  userAvatarUrl   String?
 
-  @@index([postId])
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("post_comments")
+}
+
+model PostShare {
+  id       String   @id @default(uuid())
+  postId   String
+  userId   String
+  sharedAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("post_shares")
+}
+
+model PostView {
+  id       String   @id @default(uuid())
+  postId   String
+  userId   String?  // null for anonymous views
+  viewedAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("post_views")
+}
+
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followingId String
+  followedAt  DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@map("user_follows")
+}
+
+model PostBookmark {
+  id           String   @id @default(uuid())
+  postId       String
+  userId       String
+  bookmarkedAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("post_bookmarks")
+}
+
+// Enums
+enum PostType {
+  GENERAL
+  BADGE_AWARD
+  PROJECT_UPDATE
+  COLLABORATION
+  JOB_POSTING
+  EVENT
+  ANNOUNCEMENT
+  SHARE
+  PROJECT_SHOWCASE
+  RESEARCH_PAPER
+  EVENT_HIGHLIGHT
+  AD
+}
+
+enum PostVisibility {
+  PUBLIC
+  COLLEGE
+  DEPARTMENT
+  PRIVATE
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }

@@ -33,15 +33,16 @@ export async function getUserIdentity(userId: string, authHeader: string): Promi
   }
   
   const userData = await res.json();
+  const user = userData.user; // Auth service returns { user: {...} }
   const identity: UserIdentity = {
-    id: userData.id,
-    email: userData.email,
-    displayName: userData.displayName,
-    avatarUrl: userData.avatarUrl,
-    roles: userData.roles,
-    collegeId: userData.collegeId,
-    department: userData.department,
-    year: userData.year,
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    roles: user.roles,
+    collegeId: user.collegeId,
+    department: user.department,
+    year: user.year,
   };
 
   // Cache the identity
